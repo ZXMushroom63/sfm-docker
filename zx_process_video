@@ -1,0 +1,76 @@
+#!/bin/sh
+FN=$(realpath $1)
+DN=$(realpath $2)
+shift 2
+export QT_QPA_PLATFORM=offscreen
+echo "Using video file: "$FN
+echo "Writing to output dir: "$DN
+
+mkdir -p $DN
+
+sleep 3
+
+echo "Running Nerfstudio frame extraction..."
+ns-process-data video --data $FN --output-dir $DN --skip-colmap "$@" #--num-frames-target 650
+
+echo "Creating COLMAP v4 database + extracting features..."
+mkdir -p $DN/colmap
+colmap feature_extractor \
+  --database_path $DN/colmap/database.db \
+  --image_path $DN/images \
+  --FeatureExtraction.use_gpu 1 \
+  --FeatureExtraction.gpu_index 0 \
+  --ImageReader.single_camera 1 \
+  --ImageReader.camera_model OPENCV \
+  --FeatureExtraction.num_threads $(($(nproc) / 2))
+
+echo "Matching features sequentially..."
+colmap sequential_matcher \
+  --database_path $DN/colmap/database.db \
+  --FeatureMatching.num_threads $(($(nproc) - 2)) \
+  --SequentialMatching.overlap 10 \
+  --SequentialMatching.loop_detection 0
+
+echo "Calibrating database..."
+cp $DN/colmap/database.db $DN/colmap/database_calibrated.db
+colmap view_graph_calibrator \
+  --database_path $DN/colmap/database_calibrated.db
+
+mkdir -p $DN/colmap/sparse
+
+echo "Using GLOMAP for reconstruction..."
+colmap global_mapper \
+  --database_path $DN/colmap/database_calibrated.db \
+  --image_path $DN/images \
+  --output_path $DN/colmap/sparse
+
+echo Done!
+
+exit
+
+mkdir -p $DN/colmap/dense
+# ts is not worth it vro
+echo "Creating dense reconstruction in 3 seconds"
+sleep 3
+
+echo "Undistorting images for dense reconstruction..."
+colmap image_undistorter \
+  --image_path $DN/images \
+  --input_path $DN/colmap/sparse/0 \
+  --output_path $DN/colmap/dense \
+  --output_type COLMAP \
+  --max_image_size 2000
+
+echo "Running dense stereo matching (PatchMatchStereo)..."
+colmap patch_match_stereo \
+  --workspace_path $DN/colmap/dense \
+  --workspace_format COLMAP \
+  --PatchMatchStereo.geom_consistency 1 \
+  --PatchMatchStereo.gpu_index 0
+
+echo "Fusing dense depth maps into a 3D point cloud..."
+colmap stereo_fusion \
+  --workspace_path $DN/colmap/dense \
+  --workspace_format COLMAP \
+  --input_type geometric \
+  --output_path $DN/colmap/dense/fused.ply

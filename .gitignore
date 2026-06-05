@@ -1,0 +1,8 @@
+*.mp4
+.cache
+experiment/
+processed/
+out/
+splat/
+weights/*
+*.bin

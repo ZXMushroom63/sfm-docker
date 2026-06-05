@@ -1,0 +1,1 @@
+docker run --gpus all -it --user root --rm -v %USERPROFILE%\OneDrive\Documents\NERFSTUDIO:/NERFSTUDIO/  -v %USERPROFILE%\OneDrive\Documents\NERFSTUDIO\.cache\:/root/.cache/ -p 7007:7007 --shm-size=12gb nerfstudio-colmap4 bash

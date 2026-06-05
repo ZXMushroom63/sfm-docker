@@ -1,0 +1,24 @@
+#!/bin/sh
+FN=$(realpath $1)
+DN=$(realpath $2)
+NFRAMES=${3:-2}
+
+rm -r $DN
+
+shift 2
+export QT_QPA_PLATFORM=offscreen
+
+echo "Using video file: "$FN
+echo "Writing to output dir: "$DN
+echo "Using every n="$NFRAMES" for SfM"
+
+sleep 3
+mkdir -p $DN
+mkdir -p $DN/preframes
+ffmpeg -i $FN -vf "select=not(mod(n\,$NFRAMES))" -vsync vfr "$DN/preframes/frame_%05d.png"
+
+mkdir -p $DN/three-sixty
+
+./panorama_sfm_patched.py \
+    --input_image_path $DN/preframes/ \
+    --output_path $DN/three-sixty/
