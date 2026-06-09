@@ -1,5 +1,5 @@
 #COLMAP
-FROM nvidia/cuda:12.6.2-devel-ubuntu22.04 AS builder
+FROM nvidia/cuda:12.6.2-devel-ubuntu24.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -8,12 +8,30 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
+# just directly install .deb of 0.5.0, more reliable than messinbg with apt repos
 RUN wget https://developer.download.nvidia.com/compute/cudss/0.5.0/local_installers/cudss-local-repo-ubuntu2204-0.5.0_0.5.0-1_amd64.deb \
     && dpkg -i cudss-local-repo-ubuntu2204-0.5.0_0.5.0-1_amd64.deb \
-    && cp /var/cudss-local-repo-ubuntu2204-0.5.0/cudss-*-keyring.gpg /usr/share/keyrings/ \
+    && cp /var/cudss-local-repo-ubuntu2204-0.5.0/cudss-*-keyring.gpg /usr/share/keyrings/
+
+RUN find /var/cudss-local-repo-ubuntu2204-0.5.0/ -name "libcudss0-cuda-12_*.deb" -exec dpkg -i {} + \
+    && find /var/cudss-local-repo-ubuntu2204-0.5.0/ -name "libcudss0-dev-cuda-12_*.deb" -exec dpkg -i {} + \
+    && find /var/cudss-local-repo-ubuntu2204-0.5.0/ -name "libcudss0-static-cuda-12_*.deb" -exec dpkg -i {} + \
+    && find /var/cudss-local-repo-ubuntu2204-0.5.0/ -name "cudss-cuda-12_*.deb" -exec dpkg -i {} + \
     && rm cudss-local-repo-ubuntu2204-0.5.0_0.5.0-1_amd64.deb
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# RUN wget https://developer.download.nvidia.com/compute/cudss/0.5.0/local_installers/cudss-local-repo-ubuntu2204-0.5.0_0.5.0-1_amd64.deb \
+#     && dpkg -i cudss-local-repo-ubuntu2204-0.5.0_0.5.0-1_amd64.deb \
+#     && cp /var/cudss-local-repo-ubuntu2204-0.5.0/cudss-*-keyring.gpg /usr/share/keyrings/ \
+#     && rm cudss-local-repo-ubuntu2204-0.5.0_0.5.0-1_amd64.deb
+
+# RUN wget https://developer.download.nvidia.com/compute/cudss/0.3.0/local_installers/cudss-local-repo-ubuntu2204-0.3.0_0.3.0-1_amd64.deb \
+#     && dpkg -i cudss-local-repo-ubuntu2204-0.3.0_0.3.0-1_amd64.deb \
+#     && cp /var/cudss-local-repo-ubuntu2204-0.3.0/cudss-*-keyring.gpg /usr/share/keyrings/ \
+#     && rm cudss-local-repo-ubuntu2204-0.3.0_0.3.0-1_amd64.deb
+
+RUN apt-get update && apt-get install -y --no-install-recommends software-properties-common && \
+    add-apt-repository -y universe && \
+    apt-get update && apt-get install -y --no-install-recommends \
     wget \
     git \
     cmake \
@@ -23,15 +41,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgoogle-glog-dev \
     libatlas-base-dev \
     libsuitesparse-dev \
-    libfaiss-dev \
     libsqlite3-dev \
     libboost-graph-dev \
     libboost-program-options-dev \
     libeigen3-dev \
     libopenimageio-dev \
     libopenexr-dev \
-    libcudss0-dev-cuda-12 \
-    cudss-cuda-12 \
     openimageio-tools \
     libgflags-dev \
     libcgal-dev \
@@ -48,7 +63,15 @@ RUN cd /usr/lib/x86_64-linux-gnu && \
     ln -sf libcudss/12/libcudss.so.0.* libcudss.so.0 && \
     ln -sf libcudss.so.0 libcudss.so
 
-RUN git clone --recurse-submodules https://github.com/ceres-solver/ceres-solver.git /tmp/ceres-src && \
+RUN git clone --depth=1 https://github.com/facebookresearch/faiss.git /tmp/faiss-src && \
+    cd /tmp/faiss-src && \
+    mkdir build && cd build && \
+    cmake .. -DFAISS_ENABLE_GPU=OFF -DBUILD_TESTING=OFF -DFAISS_ENABLE_PYTHON=OFF -DFAISS_ENABLE_TESTING=OFF -DCMAKE_BUILD_TYPE=Release && \
+    make -j$(nproc) faiss && \
+    make install && \
+    rm -rf /tmp/faiss-src
+
+RUN git clone --depth=1 --recurse-submodules --shallow-submodules https://github.com/ceres-solver/ceres-solver.git /tmp/ceres-src && \
     cd /tmp/ceres-src && \
     git checkout master && \
     mkdir build && cd build && \
@@ -61,7 +84,7 @@ RUN git clone --recurse-submodules https://github.com/ceres-solver/ceres-solver.
     make install && \
     rm -rf /tmp/ceres-src
 
-RUN git clone https://github.com/colmap/colmap.git /tmp/colmap-src && \
+RUN git clone --depth=1 https://github.com/colmap/colmap.git /tmp/colmap-src && \
     cd /tmp/colmap-src && \
     # checkout latest tagged release. change to 'main' to checkout the latest arch
     git checkout $(git describe --tags $(git rev-list --tags --max-count=1)) && \
@@ -83,20 +106,26 @@ RUN git clone https://github.com/colmap/colmap.git /tmp/colmap-src && \
     make -j$(nproc) && \
     make install && \
     apt-get update && apt-get install -y --no-install-recommends python3 python3-pip python3-dev ninja-build && \
+    rm -f /usr/lib/python3.*/EXTERNALLY-MANAGED && \
     cd /tmp/colmap-src && \
-    pip3 install ninja ruff pybind11 scikit-build-core && \
+    pip3 install --no-cache-dir --break-system-packages ninja ruff pybind11 scikit-build-core && \
     pip3 wheel . --wheel-dir=/tmp/colmap-wheels && \
     rm -rf /var/lib/apt/lists/* && \
     rm -rf /tmp/colmap-src
 
 # RT
-FROM nvidia/cuda:12.6.2-runtime-ubuntu22.04
+FROM nvidia/cuda:12.6.2-runtime-ubuntu24.04
 
 USER root
 ENV DEBIAN_FRONTEND=noninteractive
 ENV CUDA_HOME=/usr/local/cuda
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN echo "deb http://archive.ubuntu.com/ubuntu/ jammy main universe restricted multiverse" > /etc/apt/sources.list.d/jammy-fallback.list
+RUN echo "Package: *\nPin: release n=jammy\nPin-Priority: 100" > /etc/apt/preferences.d/jammy-pin
+
+RUN apt-get update && apt-get install -y --no-install-recommends software-properties-common && \
+    add-apt-repository -y universe && \
+    apt-get update && apt-get install -y --no-install-recommends \
     python3-pip \
     python3-dev \
     git \
@@ -111,11 +140,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libopenexr25 \
     libgflags2.2 \
     libmetis5 \
-    libopencv-core4.5d \
     libgl1 \
     libegl1 \
     libglvnd-dev \
     libgomp1 \
+    libgflags-dev \
+    libcgal-dev \
+    libsuitesparse-dev \
+    libgoogle-glog-dev \
+    libgtest-dev \
     wget \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
@@ -129,6 +162,7 @@ COPY --from=builder /usr/local/share/colmap /usr/local/share/colmap
 COPY --from=builder /usr/lib/x86_64-linux-gnu/libcudss/12/libcudss.so.0.* /usr/local/lib/
 
 COPY --from=builder /tmp/colmap-wheels /tmp/colmap-wheels
+RUN rm -f /usr/lib/python3.*/EXTERNALLY-MANAGED
 RUN pip3 install /tmp/colmap-wheels/*.whl && rm -rf /tmp/colmap-wheels
 
 RUN cd /usr/local/lib && \
@@ -139,36 +173,69 @@ RUN cd /usr/local/lib && \
 ENV PATH=/usr/local/cuda/bin:$PATH
 ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/lib:$LD_LIBRARY_PATH
 
-RUN pip3 install --no-cache-dir --upgrade pip setuptools wheel
-RUN pip3 install --no-cache-dir \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3-pip \
+    python3-setuptools \
+    python3-wheel \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip3 install --no-cache-dir --break-system-packages \
     torch \
     torchvision \
     --extra-index-url https://download.pytorch.org/whl/cu126 \
     --index-url https://download.pytorch.org/whl/cu126
 
-RUN git clone --recurse-submodules https://github.com/nerfstudio-project/gsplat.git /tmp/gsplat && \
+RUN git clone --depth=1 --recurse-submodules --shallow-submodules https://github.com/nerfstudio-project/gsplat.git /tmp/gsplat && \
     cd /tmp/gsplat && \
-    FORCE_CMAKE=1 TORCH_CUDA_ARCH_LIST="7.5" MAX_JOBS=4 FORCE_CUDA=1 pip3 install --no-cache-dir --no-build-isolation . && \
+    FORCE_CMAKE=1 TORCH_CUDA_ARCH_LIST="7.5" MAX_JOBS=4 FORCE_CUDA=1 pip3 install --no-cache-dir --break-system-packages --no-build-isolation . && \
     rm -rf /tmp/gsplat
 
-RUN git clone https://github.com/nerfstudio-project/nerfstudio.git /tmp/nerfstudio && \
+RUN git clone --depth=1 https://github.com/nerfstudio-project/nerfstudio.git /tmp/nerfstudio && \
     cd /tmp/nerfstudio && \
-    pip3 install --no-cache-dir . && \
+    pip3 install --no-cache-dir --break-system-packages --ignore-installed . && \
     rm -rf /tmp/nerfstudio
 
-RUN git clone https://github.com/KevinXu02/splatfacto-w.git /tmp/splatfacto-w && \
+RUN git clone --depth=1 https://github.com/KevinXu02/splatfacto-w.git /tmp/splatfacto-w && \
     cd /tmp/splatfacto-w && \
-    pip3 install --no-cache-dir . && \
+    pip3 install --no-cache-dir --break-system-packages . && \
     rm -rf /tmp/splatfacto-w
 
-RUN git clone https://github.com/colmap/gluemap.git /tmp/gluemap && \
-    cd /tmp/gluemap && \
-    pip3 install --no-cache-dir . && \
-    rm -rf /tmp/gluemap
+RUN wget https://developer.download.nvidia.com/compute/cudss/0.5.0/local_installers/cudss-local-repo-ubuntu2204-0.5.0_0.5.0-1_amd64.deb \
+    && dpkg -i cudss-local-repo-ubuntu2204-0.5.0_0.5.0-1_amd64.deb \
+    && cp /var/cudss-local-repo-ubuntu2204-0.5.0/cudss-*-keyring.gpg /usr/share/keyrings/
+
+RUN find /var/cudss-local-repo-ubuntu2204-0.5.0/ -name "libcudss0-cuda-12_*.deb" -exec dpkg -i {} + \
+    && find /var/cudss-local-repo-ubuntu2204-0.5.0/ -name "libcudss0-dev-cuda-12_*.deb" -exec dpkg -i {} + \
+    && find /var/cudss-local-repo-ubuntu2204-0.5.0/ -name "libcudss0-static-cuda-12_*.deb" -exec dpkg -i {} + \
+    && find /var/cudss-local-repo-ubuntu2204-0.5.0/ -name "cudss-cuda-12_*.deb" -exec dpkg -i {} + \
+    && rm cudss-local-repo-ubuntu2204-0.5.0_0.5.0-1_amd64.deb
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libmetis-dev \
+    libeigen3-dev \
+    libboost-all-dev \
+    libatlas-base-dev \
+    libatlas3-base \
+    libgtest-dev \
+    libgmock-dev \
+    libopencv-dev \
+    libglew-dev \
+    libblas-dev \
+    liblapack-dev \
+    libgl1 \
+    libegl1 \
+    libglvnd-dev \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /gluemap && git clone --depth=1 --recurse-submodules --shallow-submodules https://github.com/colmap/gluemap.git /gluemap && \
+    cd /gluemap && \
+    export Boost_INCLUDE_DIR=/usr/include && \
+    pip3 install --no-cache-dir --break-system-packages -e . --config-settings=cmake.args="-DBoost_INCLUDE_DIR=/usr/include"
 
 RUN pip install "pillow<11.0.0" --force-reinstall
-RUN pip install --no-cache-dir "cmake>=3.15"
-RUN pip install --no-cache-dir setuptools wheel scikit-build-core transformers accelerate safetensors huggingface_hub
+RUN pip install --no-cache-dir --break-system-packages "cmake>=3.15"
+RUN pip install --no-cache-dir --break-system-packages setuptools wheel scikit-build-core transformers accelerate safetensors huggingface_hub
 
 ENV colmap_DIR=/usr/local/share/colmap
 

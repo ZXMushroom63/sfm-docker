@@ -48,29 +48,29 @@ echo Done!
 
 exit
 
-mkdir -p $DN/colmap/dense
-# ts is not worth it vro
-echo "Creating dense reconstruction in 3 seconds"
-sleep 3
+# mkdir -p $DN/colmap/dense
+# # ts is not worth it vro
+# echo "Creating dense reconstruction in 3 seconds"
+# sleep 3
 
-echo "Undistorting images for dense reconstruction..."
-colmap image_undistorter \
-  --image_path $DN/images \
-  --input_path $DN/colmap/sparse/0 \
-  --output_path $DN/colmap/dense \
-  --output_type COLMAP \
-  --max_image_size 2000
+# echo "Undistorting images for dense reconstruction..."
+# colmap image_undistorter \
+#   --image_path $DN/images \
+#   --input_path $DN/colmap/sparse/0 \
+#   --output_path $DN/colmap/dense \
+#   --output_type COLMAP \
+#   --max_image_size 2000
 
-echo "Running dense stereo matching (PatchMatchStereo)..."
-colmap patch_match_stereo \
-  --workspace_path $DN/colmap/dense \
-  --workspace_format COLMAP \
-  --PatchMatchStereo.geom_consistency 1 \
-  --PatchMatchStereo.gpu_index 0
+# echo "Running dense stereo matching (PatchMatchStereo)..."
+# colmap patch_match_stereo \
+#   --workspace_path $DN/colmap/dense \
+#   --workspace_format COLMAP \
+#   --PatchMatchStereo.geom_consistency 1 \
+#   --PatchMatchStereo.gpu_index 0
 
-echo "Fusing dense depth maps into a 3D point cloud..."
-colmap stereo_fusion \
-  --workspace_path $DN/colmap/dense \
-  --workspace_format COLMAP \
-  --input_type geometric \
-  --output_path $DN/colmap/dense/fused.ply
+# echo "Fusing dense depth maps into a 3D point cloud..."
+# colmap stereo_fusion \
+#   --workspace_path $DN/colmap/dense \
+#   --workspace_format COLMAP \
+#   --input_type geometric \
+#   --output_path $DN/colmap/dense/fused.ply
