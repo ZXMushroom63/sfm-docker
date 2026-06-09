@@ -1,5 +1,6 @@
+#!/bin/sh
 mkdir -p /NERFSTUDIO/weights
-curl -L -z https://huggingface.co/facebook/map-anything/resolve/main/model.safetensors
+#curl -L -z https://huggingface.co/facebook/map-anything/resolve/main/model.safetensors
 curl -L -z https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_flickr100K_words32K.bin
 curl -L -z https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_flickr100K_words256K.bin
 curl -L -z https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_flickr100K_words1M.bin

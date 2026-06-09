@@ -1,6 +1,11 @@
 #COLMAP
 FROM nvidia/cuda:12.6.2-devel-ubuntu24.04 AS builder
 
+ARG COMPUTE_LEVEL=7.5
+ENV COMPUTE_VAR=${COMPUTE_LEVEL}
+ENV TORCH_CUDA_ARCH_LIST=${COMPUTE_LEVEL}
+RUN export COMPUTE_VAR_CLEAN=$(echo "${COMPUTE_LEVEL}" | sed 's/\.//g')
+
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -8,7 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# just directly install .deb of 0.5.0, more reliable than messinbg with apt repos
+# just directly install .deb of 0.5.0, more reliable than messing with apt repos
 RUN wget https://developer.download.nvidia.com/compute/cudss/0.5.0/local_installers/cudss-local-repo-ubuntu2204-0.5.0_0.5.0-1_amd64.deb \
     && dpkg -i cudss-local-repo-ubuntu2204-0.5.0_0.5.0-1_amd64.deb \
     && cp /var/cudss-local-repo-ubuntu2204-0.5.0/cudss-*-keyring.gpg /usr/share/keyrings/
@@ -92,7 +97,7 @@ RUN git clone --depth=1 https://github.com/colmap/colmap.git /tmp/colmap-src && 
     cmake .. \
       -DCMAKE_BUILD_TYPE=Release \
       # 75;80;86;89;90
-      -DCMAKE_CUDA_ARCHITECTURES="75" \
+      -DCMAKE_CUDA_ARCHITECTURES="$COMPUTE_VAR_CLEAN" \
       -DGUI_ENABLED=OFF \
       -DCUDA_ENABLED=ON \
       -DOPENGL_ENABLED=OFF \
@@ -117,6 +122,12 @@ RUN git clone --depth=1 https://github.com/colmap/colmap.git /tmp/colmap-src && 
 FROM nvidia/cuda:12.6.2-runtime-ubuntu24.04
 
 USER root
+
+ARG COMPUTE_LEVEL=7.5
+ENV COMPUTE_VAR=${COMPUTE_LEVEL}
+ENV TORCH_CUDA_ARCH_LIST=${COMPUTE_LEVEL}
+RUN export COMPUTE_VAR_CLEAN=$(echo "${COMPUTE_LEVEL}" | sed 's/\.//g')
+
 ENV DEBIAN_FRONTEND=noninteractive
 ENV CUDA_HOME=/usr/local/cuda
 
@@ -187,7 +198,7 @@ RUN pip3 install --no-cache-dir --break-system-packages \
 
 RUN git clone --depth=1 --recurse-submodules --shallow-submodules https://github.com/nerfstudio-project/gsplat.git /tmp/gsplat && \
     cd /tmp/gsplat && \
-    FORCE_CMAKE=1 TORCH_CUDA_ARCH_LIST="7.5" MAX_JOBS=4 FORCE_CUDA=1 pip3 install --no-cache-dir --break-system-packages --no-build-isolation . && \
+    FORCE_CMAKE=1 TORCH_CUDA_ARCH_LIST="$COMPUTE_VAR" MAX_JOBS=4 FORCE_CUDA=1 pip3 install --no-cache-dir --break-system-packages --no-build-isolation . && \
     rm -rf /tmp/gsplat
 
 RUN git clone --depth=1 https://github.com/nerfstudio-project/nerfstudio.git /tmp/nerfstudio && \
@@ -252,15 +263,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-ENV TORCH_CUDA_ARCH_LIST="7.5"
+ENV TORCH_CUDA_ARCH_LIST=${COMPUTE_LEVEL}
 
 ENV QT_QPA_PLATFORM=offscreen
 ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 
-RUN wget -P /usr/local/bin/ https://raw.githubusercontent.com/colmap/colmap/refs/heads/main/python/examples/panorama_sfm.py && \
-    sed -i '1s|^|#!/usr/bin/python3\n|' /usr/local/bin/panorama_sfm.py && \
-    chmod +x /usr/local/bin/panorama_sfm.py
+RUN wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/panorama_sfm.py && \
+    chmod +x /usr/local/bin/panorama_sfm.py &&
+    wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/zx_process_video && \
+    chmod +x /usr/local/bin/zx_process_video &&
+    wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/zx_process_video_360 && \
+    chmod +x /usr/local/bin/zx_process_video_360 &&
+    wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/zx_download_assets && \
+    chmod +x /usr/local/bin/zx_download_assets
 
 USER root

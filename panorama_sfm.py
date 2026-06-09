@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 """
 An example for running incremental SfM on 360 spherical panorama images.
+Patched to fix memory corruption
 """
 
 import argparse
