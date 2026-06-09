@@ -271,11 +271,11 @@ ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 
 RUN wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/panorama_sfm.py && \
-    chmod +x /usr/local/bin/panorama_sfm.py &&
+    chmod +x /usr/local/bin/panorama_sfm.py && \
     wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/zx_process_video && \
-    chmod +x /usr/local/bin/zx_process_video &&
+    chmod +x /usr/local/bin/zx_process_video && \
     wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/zx_process_video_360 && \
-    chmod +x /usr/local/bin/zx_process_video_360 &&
+    chmod +x /usr/local/bin/zx_process_video_360 && \
     wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/zx_download_assets && \
     chmod +x /usr/local/bin/zx_download_assets
 
