@@ -4,7 +4,7 @@ FROM nvidia/cuda:12.6.2-devel-ubuntu24.04 AS builder
 ARG COMPUTE_LEVEL=7.5
 ENV COMPUTE_VAR=${COMPUTE_LEVEL}
 ENV TORCH_CUDA_ARCH_LIST=${COMPUTE_LEVEL}
-RUN export COMPUTE_VAR_CLEAN=$(echo "${COMPUTE_LEVEL}" | sed 's/\.//g')
+RUN echo $(echo "${COMPUTE_LEVEL}" | sed 's/\.//g')
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -97,7 +97,7 @@ RUN git clone --depth=1 https://github.com/colmap/colmap.git /tmp/colmap-src && 
     cmake .. \
       -DCMAKE_BUILD_TYPE=Release \
       # 75;80;86;89;90
-      -DCMAKE_CUDA_ARCHITECTURES="$COMPUTE_VAR_CLEAN" \
+      -DCMAKE_CUDA_ARCHITECTURES="$(echo "${COMPUTE_LEVEL}" | sed 's/\.//g')" \
       -DGUI_ENABLED=OFF \
       -DCUDA_ENABLED=ON \
       -DOPENGL_ENABLED=OFF \
@@ -126,7 +126,6 @@ USER root
 ARG COMPUTE_LEVEL=7.5
 ENV COMPUTE_VAR=${COMPUTE_LEVEL}
 ENV TORCH_CUDA_ARCH_LIST=${COMPUTE_LEVEL}
-RUN export COMPUTE_VAR_CLEAN=$(echo "${COMPUTE_LEVEL}" | sed 's/\.//g')
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV CUDA_HOME=/usr/local/cuda
