@@ -1,4 +1,10 @@
 #!/bin/sh
+if [ -z "$1" ] || [ -z "$2" ]; then
+  echo "Turn a video into mapped images using COLMAP + GLOMAP."
+  echo "Usage: $0 <video_file> <output_dir> [ns-process-data flags]"
+  exit 1
+fi
+
 FN=$(realpath $1)
 DN=$(realpath $2)
 shift 2

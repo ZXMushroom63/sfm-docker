@@ -1,4 +1,10 @@
 #!/bin/sh
+if [ -z "$1" ] || [ -z "$2" ]; then
+  echo "Example script to splat mapped frames using nerfstudio's splatfacto. I recommend not using these settings."
+  echo "Usage: $0 <mapped data dir> <splat dir>"
+  exit 1
+fi
+
 mkdir -p $2
 ns-train splatfacto --output-dir $(realpath $2) \
     --pipeline.model.use_bilateral_grid True \

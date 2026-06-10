@@ -1,0 +1,34 @@
+#!/bin/sh
+if [ -z "$1" ] || [ -z "$2" ]; then
+  echo "Turn a video into mapped images using GLUEMAP."
+  echo "Usage: $0 <video_file> <output_dir> [ns-process-data flags]"
+  exit 1
+fi
+
+FN=$(realpath $1)
+DN=$(realpath $2)
+shift 2
+export QT_QPA_PLATFORM=offscreen
+echo "Using video file: "$FN
+echo "Writing to output dir: "$DN
+
+mkdir -p $DN
+
+sleep 3
+
+echo "Running Nerfstudio frame extraction..."
+ns-process-data video --data $FN --output-dir $DN --skip-colmap "$@" 
+
+mkdir -p $DN/colmap/sparse
+
+echo "Using GLUEMAP for deep global reconstruction..."
+gluemap-demo \
+  --images_path $DN/images \
+  --write_path $DN/colmap/sparse \
+  --is_multi_sequence \
+  --intrinsics_mode SHARED \
+  --camera_model OPENCV
+
+echo Done!
+
+exit

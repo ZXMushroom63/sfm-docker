@@ -28,7 +28,6 @@ N = TypeVar("N", bound=int)
 NDArrayNx2 = np.ndarray[tuple[N, Literal[2]], np.dtype[np.float64]]
 NDArray3x1 = np.ndarray[tuple[Literal[3], Literal[1]], np.dtype[np.float64]]
 
-
 @dataclass
 class PanoRenderOptions:
     num_steps_yaw: int
@@ -290,8 +289,18 @@ def render_perspective_images(
                 pbar.update(1)
 
     # Clean binding back on parent main thread execution
-    for rig_camera in rig_config.cameras:
-        rig_camera.camera = main_thread_camera
+    # for rig_camera in rig_config.cameras:
+    #     rig_camera.camera = main_thread_camera
+    
+    for idx, rig_camera in enumerate(rig_config.cameras):
+        cam_copy = pycolmap.Camera.create_from_model_id(
+            camera_id=idx,
+            model=main_thread_camera.model,
+            focal_length=main_thread_camera.focal_length_x, #copy focal length
+            width=main_thread_camera.width,
+            height=main_thread_camera.height,
+        )
+        rig_camera.camera = cam_copy
 
     return rig_config
 
@@ -330,11 +339,23 @@ def run(args: argparse.Namespace) -> None:
     extraction_opts = pycolmap.FeatureExtractionOptions()
     extraction_opts.use_gpu = True
     extraction_opts.gpu_index = "0"
+    
+    reader_opts = pycolmap.ImageReaderOptions(mask_path=mask_dir)
+    reader_opts.camera_model = "SIMPLE_PINHOLE"
+    
+    first_pano_path = pano_image_dir / pano_image_names[0]
+    with PIL.Image.open(first_pano_path) as img:
+        w, h = img.size
+    render_opts = PANO_RENDER_OPTIONS[args.pano_render_type]
+    img_w = int(w * render_opts.hfov_deg / 360)
+    focal_prior = img_w / (2 * np.tan(np.deg2rad(render_opts.hfov_deg) / 2))
+    
+    reader_opts.camera_params = f"{focal_prior}, {img_w / 2.0}, {img_w / 2.0}"
 
     pycolmap.extract_features(
         database_path,
         image_dir,
-        reader_options=pycolmap.ImageReaderOptions(mask_path=mask_dir),
+        reader_options=reader_opts,
         camera_mode=pycolmap.CameraMode.PER_FOLDER,
         extraction_options=extraction_opts
     )
@@ -353,7 +374,7 @@ def run(args: argparse.Namespace) -> None:
     if args.matcher == "sequential":
         pycolmap.match_sequential(
             database_path,
-            pairing_options=pycolmap.SequentialPairingOptions(loop_detection=True, vocab_tree_path="vocab_tree_faiss_flickr100K_words32K.bin"),
+            pairing_options=pycolmap.SequentialPairingOptions(loop_detection=True),
             matching_options=matching_options,
         )
     elif args.matcher == "exhaustive":
@@ -365,7 +386,7 @@ def run(args: argparse.Namespace) -> None:
     else:
         logging.fatal(f"Unknown matcher: {args.matcher}")
 
-    glomap_opts = pycolmap.GlobalMapperOptions()
+    glomap_opts = pycolmap.GlobalPipelineOptions()
     recs = pycolmap.global_mapping(
         database_path=database_path,
         image_path=image_dir,

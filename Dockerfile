@@ -236,6 +236,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libegl1 \
     libglvnd-dev \
     libgomp1 \
+    libopenimageio-dev \
     && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /gluemap && git clone --depth=1 --recurse-submodules --shallow-submodules https://github.com/colmap/gluemap.git /gluemap && \
@@ -276,6 +277,10 @@ RUN wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-d
     wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/zx_process_video_360 && \
     chmod +x /usr/local/bin/zx_process_video_360 && \
     wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/zx_download_assets && \
-    chmod +x /usr/local/bin/zx_download_assets
+    chmod +x /usr/local/bin/zx_download_assets && \
+    wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/zx_splat && \
+    chmod +x /usr/local/bin/zx_splat && \
+    wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/zx_glue_video && \
+    chmod +x /usr/local/bin/zx_glue_video
 
 USER root

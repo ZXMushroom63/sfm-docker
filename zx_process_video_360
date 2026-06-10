@@ -1,9 +1,18 @@
 #!/bin/sh
+if [ -z "$1" ] || [ -z "$2" ]; then
+  echo "Turn a 360 panoramic video into mapped images using a patched panorama_sfm.py script."
+  echo "Outputs are saved in subdirectory 'three-sixty'"
+  echo "Usage: $0 <video_file> <output_dir> [frame_extract_stepping]"
+  exit 1
+fi
+
 FN=$(realpath $1)
 DN=$(realpath $2)
 NFRAMES=${3:-2}
 
-rm -r $DN
+if [ -d "$DN/three-sixty" ]; then
+    rm -r "$DN"
+fi
 
 shift 2
 export QT_QPA_PLATFORM=offscreen
@@ -15,10 +24,40 @@ echo "Using every n="$NFRAMES" for SfM"
 sleep 3
 mkdir -p $DN
 mkdir -p $DN/preframes
-ffmpeg -i $FN -vf "select=not(mod(n\,$NFRAMES))" -vsync vfr "$DN/preframes/frame_%05d.png"
+
+MADE_SYMLINK=0
+
+if [ ! -f ./vocab_tree_faiss_flickr100K_words32K.bin ]; then
+  if [ ! -f /NERFSTUDIO/weights/vocab_tree_faiss_flickr100K_words32K.bin ] && [ ! -f ./vocab.bin ]; then
+    echo "Run 'zx_download_assets small' to download the 32k vocab tree. To use a different vocab tree, create a vocab.bin in the current working directory."
+    exit
+  fi
+  if [ -f ./vocab.bin ]; then
+    ln -s $(realpath ./vocab.bin) ./vocab_tree_faiss_flickr100K_words32K.bin
+    MADE_SYMLINK=1
+  else
+    if [ -f /NERFSTUDIO/weights/vocab_tree_faiss_flickr100K_words32K.bin ]; then
+      ln -s /NERFSTUDIO/weights/vocab_tree_faiss_flickr100K_words32K.bin ./vocab_tree_faiss_flickr100K_words32K.bin
+      MADE_SYMLINK=1
+    fi
+  fi
+else
+  echo "PyCOLMAP is hardcoded to use vocab_tree_faiss_flickr100K_words32K.bin by default if it exists. Move the file to a different directory or rename it to use a different vocab tree."
+fi
+
+ffmpeg -i $FN -vf "select=not(mod(n\,$NFRAMES))" -fps_mode vfr "$DN/preframes/frame_%05d.png"
 
 mkdir -p $DN/three-sixty
+#/NERFSTUDIO/weights/vocab_tree_faiss_flickr100K_words32K.bin
 
 panorama_sfm.py \
     --input_image_path $DN/preframes/ \
     --output_path $DN/three-sixty/
+
+
+if [ "$MADE_SYMLINK" -eq 1 ]; then
+  unlink ./vocab_tree_faiss_flickr100K_words32K.bin
+fi
+
+
+echo "Outputs are saved in subdirectory 'three-sixty'"
