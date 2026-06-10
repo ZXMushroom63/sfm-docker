@@ -19,6 +19,6 @@ ffmpeg -i $FN -vf "select=not(mod(n\,$NFRAMES))" -vsync vfr "$DN/preframes/frame
 
 mkdir -p $DN/three-sixty
 
-./panorama_sfm_patched.py \
+panorama_sfm.py \
     --input_image_path $DN/preframes/ \
     --output_path $DN/three-sixty/
