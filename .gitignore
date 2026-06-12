@@ -6,3 +6,4 @@ out/
 splat/
 weights/*
 *.bin
+vid/

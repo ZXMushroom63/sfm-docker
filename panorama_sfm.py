@@ -393,8 +393,9 @@ def run(args: argparse.Namespace) -> None:
         output_path=rec_path,
         options=glomap_opts
     )
-    for idx, rec in recs.items():
-        logging.info(f"#{idx} {rec.summary()}")
+    print("Done!")
+    # for idx, rec in recs.items():
+    #     logging.info(f"#{idx} {rec.summary()}")
 
 
 if __name__ == "__main__":
