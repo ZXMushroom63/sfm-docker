@@ -76,7 +76,7 @@ RUN git clone --depth=1 https://github.com/facebookresearch/faiss.git /tmp/faiss
     make install && \
     rm -rf /tmp/faiss-src
 
-RUN git clone --depth=1 --recurse-submodules --shallow-submodules https://github.com/ceres-solver/ceres-solver.git /tmp/ceres-src && \
+RUN git clone --recurse-submodules https://github.com/ceres-solver/ceres-solver.git /tmp/ceres-src && \
     cd /tmp/ceres-src && \
     git checkout master && \
     mkdir build && cd build && \
@@ -119,7 +119,7 @@ RUN git clone --depth=1 https://github.com/colmap/colmap.git /tmp/colmap-src && 
     rm -rf /tmp/colmap-src
 
 # RT
-FROM nvidia/cuda:12.6.2-runtime-ubuntu24.04
+FROM nvidia/cuda:12.6.2-devel-ubuntu24.04
 
 USER root
 
@@ -192,11 +192,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip3 install --no-cache-dir --break-system-packages \
     torch \
     torchvision \
-    --extra-index-url https://download.pytorch.org/whl/cu126 \
-    --index-url https://download.pytorch.org/whl/cu126
+    --extra-index-url https://download.pytorch.org/whl/cu124 \
+    --index-url https://download.pytorch.org/whl/cu124
 
-RUN git clone --depth=1 --recurse-submodules --shallow-submodules https://github.com/nerfstudio-project/gsplat.git /tmp/gsplat && \
+ENV PATH=/usr/local/cuda/bin:$PATH
+ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/lib:$LD_LIBRARY_PATH
+ENV CUDA_HOME=/usr/local/cuda
+
+RUN git clone --recurse-submodules https://github.com/nerfstudio-project/gsplat.git /tmp/gsplat && \
     cd /tmp/gsplat && \
+    export CUDA_HOME=/usr/local/cuda && export PATH=$CUDA_HOME/bin:$PATH && export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH && \
     FORCE_CMAKE=1 TORCH_CUDA_ARCH_LIST="$COMPUTE_VAR" MAX_JOBS=4 FORCE_CUDA=1 pip3 install --no-cache-dir --break-system-packages --no-build-isolation . && \
     rm -rf /tmp/gsplat
 
@@ -237,18 +242,41 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libglvnd-dev \
     libgomp1 \
     libopenimageio-dev \
+    python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p /gluemap && git clone --depth=1 --recurse-submodules --shallow-submodules https://github.com/colmap/gluemap.git /gluemap && \
-    cd /gluemap && \
-    export Boost_INCLUDE_DIR=/usr/include && \
-    pip3 install --no-cache-dir --break-system-packages -e . --config-settings=cmake.args="-DBoost_INCLUDE_DIR=/usr/include"
-
-RUN pip install "pillow<11.0.0" --force-reinstall
-RUN pip install --no-cache-dir --break-system-packages "cmake>=3.15"
-RUN pip install --no-cache-dir --break-system-packages setuptools wheel scikit-build-core transformers accelerate safetensors huggingface_hub
-
 ENV colmap_DIR=/usr/local/share/colmap
+ENV Ceres_DIR=/usr/local/lib/cmake/Ceres
+COPY --from=builder /usr/local/lib/cmake/Ceres /usr/local/lib/cmake/Ceres
+
+RUN python3 -m venv /opt/gluemap-env --system-site-packages
+
+RUN pip3 uninstall -y numpy numpy
+RUN pip3 install --no-cache-dir --break-system-packages "numpy<2.0.0"
+
+RUN git clone --recurse-submodules https://github.com/colmap/gluemap.git /tmp/gluemap && \
+    cd /tmp/gluemap && \
+    export Boost_INCLUDE_DIR=/usr/include && \
+    /opt/gluemap-env/bin/pip install --no-cache-dir --upgrade pip setuptools wheel scikit-build-core && \
+    /opt/gluemap-env/bin/pip install --no-cache-dir -e . \
+    --config-settings=cmake.args="-DBoost_INCLUDE_DIR=/usr/include" \
+    --config-settings=cmake.args="-DCeres_DIR=/usr/local/lib/cmake/Ceres" && \
+    rm -rf /tmp/gluemap
+
+RUN echo '#!/bin/bash\n/opt/gluemap-env/bin/gluemap-demo "$@"' > /usr/local/bin/gluemap-demo && \
+    chmod +x /usr/local/bin/gluemap-demo
+
+# RUN mkdir -p /gluemap && git clone --depth=1 --recurse-submodules --shallow-submodules https://github.com/colmap/gluemap.git /gluemap && \
+#     cd /gluemap && \
+#     export Boost_INCLUDE_DIR=/usr/include && \
+#     pip3 install --no-cache-dir --break-system-packages -e . --config-settings=cmake.args="-DBoost_INCLUDE_DIR=/usr/include"
+
+RUN pip3 uninstall -y numpy numpy
+RUN pip3 install --no-cache-dir --break-system-packages "numpy<2.0.0"
+RUN pip3 install "pillow<11.0.0" --force-reinstall --break-system-packages
+RUN pip3 install --no-cache-dir --break-system-packages "cmake>=3.15"
+
+# RUN pip install --no-cache-dir --break-system-packages setuptools wheel scikit-build-core transformers accelerate safetensors huggingface_hub
 
 RUN ns-install-cli && pip3 cache purge
 

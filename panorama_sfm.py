@@ -374,7 +374,7 @@ def run(args: argparse.Namespace) -> None:
     if args.matcher == "sequential":
         pycolmap.match_sequential(
             database_path,
-            pairing_options=pycolmap.SequentialPairingOptions(loop_detection=True),
+            pairing_options=pycolmap.SequentialPairingOptions(loop_detection=True, vocab_tree_path=str("./vocab_tree_faiss_flickr100K_words32K.bin")),
             matching_options=matching_options,
         )
     elif args.matcher == "exhaustive":

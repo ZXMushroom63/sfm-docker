@@ -26,7 +26,7 @@ sleep 3
 mkdir -p $DN
 mkdir -p $DN/preframes
 
-MADE_SYMLINK=0
+MADE_SYMLINK="0"
 
 if [ ! -f ./vocab_tree_faiss_flickr100K_words32K.bin ]; then
   if [ ! -f /NERFSTUDIO/weights/vocab_tree_faiss_flickr100K_words32K.bin ] && [ ! -f ./vocab.bin ]; then
@@ -35,11 +35,11 @@ if [ ! -f ./vocab_tree_faiss_flickr100K_words32K.bin ]; then
   fi
   if [ -f ./vocab.bin ]; then
     ln -s $(realpath ./vocab.bin) ./vocab_tree_faiss_flickr100K_words32K.bin
-    MADE_SYMLINK=1
+    MADE_SYMLINK="1"
   else
     if [ -f /NERFSTUDIO/weights/vocab_tree_faiss_flickr100K_words32K.bin ]; then
       ln -s /NERFSTUDIO/weights/vocab_tree_faiss_flickr100K_words32K.bin ./vocab_tree_faiss_flickr100K_words32K.bin
-      MADE_SYMLINK=1
+      MADE_SYMLINK="1"
     fi
   fi
 else
@@ -51,14 +51,22 @@ ffmpeg -i $FN -vf "select=not(mod(n\,$NFRAMES))" -fps_mode vfr "$DN/preframes/fr
 mkdir -p $DN/three-sixty
 #/NERFSTUDIO/weights/vocab_tree_faiss_flickr100K_words32K.bin
 
-panorama_sfm.py \
+SCRIPT_PATH=$(which panorama_sfm.py)
+
+if [ -f ./panorama_sfm.py ]; then
+  SCRIPT_PATH=$(realpath ./panorama_sfm.py)
+fi
+
+echo "Doing 360 SfM using $SCRIPT_PATH"
+
+$SCRIPT_PATH \
     --input_image_path $DN/preframes/ \
     --output_path $DN/three-sixty/
 
 ln -s $DN/three-sixty/ $DN/colmap
 ln -s $DN/three-sixty/images/ $DN/images
 
-if [ "$MADE_SYMLINK" -eq 1 ]; then
+if [ "$MADE_SYMLINK" -eq "1" ]; then
   unlink ./vocab_tree_faiss_flickr100K_words32K.bin
 fi
 
