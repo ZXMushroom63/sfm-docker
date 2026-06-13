@@ -8,3 +8,5 @@ weights/*
 models/*
 *.bin
 vid/
+checkpoints/*
+gluemap_checkpoints/*

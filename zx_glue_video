@@ -1,7 +1,7 @@
 #!/bin/sh
 if [ -z "$1" ] || [ -z "$2" ]; then
   echo "Turn a video into mapped images using GLUEMAP."
-  echo "Usage: $0 <video_file> <output_dir> [ns-process-data flags]"
+  echo "Usage: $0 <video_file> <output_dir> [optional: frame stepping]"
   exit 1
 fi
 
@@ -12,6 +12,7 @@ fi
 
 FN=$(realpath $1)
 DN=$(realpath $2)
+NFRAMES=${3:-2}
 shift 2
 export QT_QPA_PLATFORM=offscreen
 echo "Using video file: "$FN
@@ -21,8 +22,9 @@ mkdir -p $DN
 
 sleep 3
 
-echo "Running Nerfstudio frame extraction..."
-ns-process-data video --data $FN --output-dir $DN --skip-colmap "$@" 
+echo "Running ffmpeg frame extraction..."
+mkdir -p $DN/images/
+ffmpeg -i $FN -vf "select=not(mod(n\,$NFRAMES))" -fps_mode vfr "$DN/images/frame_%05d.png"
 
 mkdir -p $DN/colmap/sparse
 
@@ -30,9 +32,15 @@ echo "Using GLUEMAP for deep global reconstruction..."
 gluemap-demo \
   --images_path $DN/images \
   --write_path $DN/colmap/sparse \
-  --is_multi_sequence \
   --intrinsics_mode SHARED \
-  --camera_model OPENCV
+  --camera_model OPENCV \
+  --chosen_model pi3 \
+  --path_feedforward /NERFSTUDIO/gluemap_checkpoints/pi3.safetensors \
+  --path_retrieval /NERFSTUDIO/gluemap_checkpoints/dino_salad.ckpt \
+  --path_tracker /NERFSTUDIO/gluemap_checkpoints/vggsfm_v2_0_0_track_predictor.bin \
+  --path_dg /NERFSTUDIO/gluemap_checkpoints/checkpoint-dg+visym.pth \
+  --subfolder_regex ".*" \
+  --is_sequential
 
 echo Done!
 

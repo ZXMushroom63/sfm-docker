@@ -260,7 +260,9 @@ RUN mkdir -p /install/gluemap && git clone --recurse-submodules https://github.c
     /opt/gluemap-env/bin/pip install --no-cache-dir --upgrade pip setuptools wheel scikit-build-core && \
     /opt/gluemap-env/bin/pip install --no-cache-dir -e . \
     --config-settings=cmake.args="-DBoost_INCLUDE_DIR=/usr/include" \
-    --config-settings=cmake.args="-DCeres_DIR=/usr/local/lib/cmake/Ceres"
+    --config-settings=cmake.args="-DCeres_DIR=/usr/local/lib/cmake/Ceres" &&\
+    cd /install/gluemap/thirdparty/doppelgangers-plusplus/dust3r/croco/models/curope && \
+    /opt/gluemap-env/bin/python setup.py build_ext --inplace
 
 # RUN mkdir -p /gluemap && git clone --depth=1 --recurse-submodules --shallow-submodules https://github.com/colmap/gluemap.git /gluemap && \
 #     cd /gluemap && \
@@ -323,9 +325,10 @@ RUN ns-install-cli && pip3 cache purge
 
 RUN echo "alias e='exit'" >> /root/.bashrc && \
     echo "alias cls='clear'" >> /root/.bashrc && \
+    echo "alias gluemap='gluemap-demo'" >> /root/.bashrc && \
     echo "export QT_QPA_PLATFORM=offscreen" >> /root/.bashrc && \
     echo "export MAX_JOBS=$(($(nproc) / 2))" >> /root/.bashrc && \
-    echo "mkdir -p /NERFSTUDIO/gluemap_checkpoints && ln -s /NERFSTUDIO/gluemap_checkpoints /NERFSTUDIO/checkpoints" >> /root/.bashrc
+    echo "mkdir -p /NERFSTUDIO/gluemap_checkpoints && ln -s /NERFSTUDIO/gluemap_checkpoints /install/gluemap/checkpoints" >> /root/.bashrc
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
