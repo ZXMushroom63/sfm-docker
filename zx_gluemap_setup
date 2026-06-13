@@ -1,0 +1,27 @@
+#!/bin/sh
+mkdir -p /NERFSTUDIO/gluemap_checkpoints
+cd /NERFSTUDIO/gluemap_checkpoints
+
+echo "---------------------------"
+echo "- MODEL DOWNLOADER SCRIPT -"
+echo "---------------------------"
+
+echo "This is a large download, please be patient..."
+sleep 1
+
+# curl "https://huggingface.co/facebook/map-anything-apache/resolve/main/model.safetensors" \
+#      -O map_anything.safetensors
+
+wget -O dino_salad.ckpt \
+    https://github.com/serizba/salad/releases/download/v1.0.0/dino_salad.ckpt
+
+wget -O vggsfm_v2_0_0_track_predictor.bin \
+    https://huggingface.co/facebook/VGGSfM/resolve/main/vggsfm_v2_tracker.pt
+
+hf download yyfz233/Pi3 model.safetensors --local-dir .
+mv model.safetensors pi3.safetensors
+
+hf download doppelgangers25/doppelgangers_plusplus \
+    checkpoint-dg+visym.pth --local-dir .
+
+echo "Setup complete!" > /NERFSTUDIO/gluemap_checkpoints/done.txt

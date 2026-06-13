@@ -5,6 +5,11 @@ if [ -z "$1" ] || [ -z "$2" ]; then
   exit 1
 fi
 
+if [ ! -f /NERFSTUDIO/gluemap_checkpoints/done.txt ]; then
+  echo "Please run zx_gluemap_setup first to download models. ( or create /NERFSTUDIO/gluemap_checkpoints/done.txt to bypass this message. )"
+  exit
+fi
+
 FN=$(realpath $1)
 DN=$(realpath $2)
 shift 2

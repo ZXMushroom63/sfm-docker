@@ -1,6 +1,5 @@
 #!/bin/sh
 mkdir -p /NERFSTUDIO/weights
-#curl -L -z https://huggingface.co/facebook/map-anything/resolve/main/model.safetensors
 
 echo "Usage: $0 <small|medium|large>"
 SZ=${1:"small"}

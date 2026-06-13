@@ -5,5 +5,6 @@ processed/
 out/
 splat/
 weights/*
+models/*
 *.bin
 vid/
