@@ -8,14 +8,14 @@ SZ=${1:-"small"}
 if [ "$SZ" = "large" ]; then
     echo "Warning: the large vocab tree is 275MB! Proceeding in 3 seconds..."
     sleep 3
-    wget https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_flickr100K_words32K.bin
-    wget https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_flickr100K_words256K.bin
-    wget https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_flickr100K_words1M.bin
+    wget https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_faiss_flickr100K_words32K.bin
+    wget https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_faiss_flickr100K_words256K.bin
+    wget https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_faiss_flickr100K_words1M.bin
 elif [ "$SZ" = "medium" ]; then
     echo "Downloading small + medium vocab trees!"
-    wget https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_flickr100K_words32K.bin
-    wget https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_flickr100K_words256K.bin
+    wget https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_faiss_flickr100K_words32K.bin
+    wget https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_faiss_flickr100K_words256K.bin
 else
     echo "Downloading small vocab tree..."
-    wget https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_flickr100K_words32K.bin
+    wget https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_faiss_flickr100K_words32K.bin
 fi
