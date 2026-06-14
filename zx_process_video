@@ -31,11 +31,17 @@ colmap feature_extractor \
   --FeatureExtraction.num_threads $(($(nproc) / 2))
 
 echo "Matching features sequentially..."
+
+VOCABFLAGS = "--SequentialMatching.loop_detection 0"
+
+if [ -f /NERFSTUDIO/weights/vocab_tree_flickr100K_words32K.bin ]; then
+  VOCABFLAGS = "--SequentialMatching.loop_detection 1 --SequentialMatching.loop_detection_period 20 --SequentialMatching.loop_detection_num_images 50 --VocabTreeMatching.vocab_tree_path /NERFSTUDIO/weights/vocab_tree_flickr100K_words32K.bin"
+fi
+
 colmap sequential_matcher \
   --database_path $DN/colmap/database.db \
   --FeatureMatching.num_threads $(($(nproc) - 2)) \
-  --SequentialMatching.overlap 10 \
-  --SequentialMatching.loop_detection 0
+  --SequentialMatching.overlap 10 $VOCABFLAGS
 
 echo "Calibrating database..."
 cp $DN/colmap/database.db $DN/colmap/database_calibrated.db

@@ -1,20 +1,21 @@
 #!/bin/sh
 mkdir -p /NERFSTUDIO/weights
+cd /NERFSTUDIO/weights
 
 echo "Usage: $0 <small|medium|large>"
-SZ=${1:"small"}
+SZ=${1:-"small"}
 
-if [ "$(echo "$SZ" | tr '[:upper:]' '[:lower:]')" = "large" ]; then
+if [ "$SZ" = "large" ]; then
     echo "Warning: the large vocab tree is 275MB! Proceeding in 3 seconds..."
     sleep 3
-    curl -L -z https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_flickr100K_words32K.bin
-    curl -L -z https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_flickr100K_words256K.bin
-    curl -L -z https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_flickr100K_words1M.bin
-elif [ "$(echo "$SZ" | tr '[:upper:]' '[:lower:]')" = "medium" ]; then
+    wget https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_flickr100K_words32K.bin
+    wget https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_flickr100K_words256K.bin
+    wget https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_flickr100K_words1M.bin
+elif [ "$SZ" = "medium" ]; then
     echo "Downloading small + medium vocab trees!"
-    curl -L -z https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_flickr100K_words32K.bin
-    curl -L -z https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_flickr100K_words256K.bin
+    wget https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_flickr100K_words32K.bin
+    wget https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_flickr100K_words256K.bin
 else
     echo "Downloading small vocab tree..."
-    curl -L -z https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_flickr100K_words32K.bin
+    wget https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_flickr100K_words32K.bin
 fi

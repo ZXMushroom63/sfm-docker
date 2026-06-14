@@ -1,21 +1,37 @@
 #!/bin/sh
-if [ -z "$1" ] || [ -z "$2" ]; then
+if ( [ -z "$1" ] || [ -z "$2" ] ) && [ "$1" != "--extraflags" ]; then
   echo "Turn a 360 panoramic video into mapped images using a patched panorama_sfm.py script."
   echo "Raw outputs are saved in subdirectory 'three-sixty', for other purposes just use experiments/ directly"
   echo "Input videos must have a 2:1 aspect ratio, and be equirectangular panoramas"
-  echo "Usage: $0 <video_file> <output_dir> [frame_extract_stepping]"
+  echo "Usage: $0 <video_file> <output_dir> [frame_extract_stepping] [extra flags]"
+  echo "Or: $0 --extraflags to see extra flags"
+  echo ""
+  exit 1
+fi
+
+
+
+SCRIPT_PATH=$(which panorama_sfm.py)
+
+if [ -f ./panorama_sfm.py ]; then
+  SCRIPT_PATH=$(realpath ./panorama_sfm.py)
+fi
+
+if [ "$1" = "--extraflags" ]; then
+  $SCRIPT_PATH --help
   exit 1
 fi
 
 FN=$(realpath $1)
 DN=$(realpath $2)
 NFRAMES=${3:-2}
+BONUSFLAGS=${4:-""}
 
 if [ -d "$DN/three-sixty" ]; then
     rm -r "$DN"
 fi
 
-shift 2
+
 export QT_QPA_PLATFORM=offscreen
 
 echo "Using video file: "$FN
@@ -51,17 +67,12 @@ ffmpeg -i $FN -vf "select=not(mod(n\,$NFRAMES))" -fps_mode vfr "$DN/preframes/fr
 mkdir -p $DN/three-sixty
 #/NERFSTUDIO/weights/vocab_tree_faiss_flickr100K_words32K.bin
 
-SCRIPT_PATH=$(which panorama_sfm.py)
-
-if [ -f ./panorama_sfm.py ]; then
-  SCRIPT_PATH=$(realpath ./panorama_sfm.py)
-fi
-
 echo "Doing 360 SfM using $SCRIPT_PATH"
 
 $SCRIPT_PATH \
     --input_image_path $DN/preframes/ \
-    --output_path $DN/three-sixty/
+    --output_path $DN/three-sixty/ \
+    $BONUSFLAGS
 
 ln -s $DN/three-sixty/ $DN/colmap
 ln -s $DN/three-sixty/images/ $DN/images
