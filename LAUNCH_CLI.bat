@@ -1,1 +1,1 @@
-docker run --gpus all -it --user root --rm -v %USERPROFILE%\NERFSTUDIO:/NERFSTUDIO/  -v %USERPROFILE%\NERFSTUDIO\.cache:/root/.cache/ -p 7007:7007 --shm-size=12gb nerfstudio-colmap4 bash
+docker run --gpus all -it --user root --rm -v %USERPROFILE%\sfm-docker:/NERFSTUDIO/  -v %USERPROFILE%\sfm-docker\.cache:/root/.cache/ -p 7007:7007 --shm-size=12gb nerfstudio-colmap4 bash
