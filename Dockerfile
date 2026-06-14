@@ -342,6 +342,8 @@ ENV QT_QPA_PLATFORM=offscreen
 ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+ENV TORCH_FORCE_WEIGHTS_ONLY_LOAD=0
+ENV TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1
 
 RUN wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/panorama_sfm.py && \
     chmod +x /usr/local/bin/panorama_sfm.py && \
