@@ -39,9 +39,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends software-proper
     apt-get update && apt-get install -y --no-install-recommends \
     wget \
     git \
+    curl \
     cmake \
     build-essential \
-    libgl1-mesa-dev \
     libegl1-mesa-dev \
     libgoogle-glog-dev \
     libatlas-base-dev \
@@ -49,6 +49,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends software-proper
     libsqlite3-dev \
     libboost-graph-dev \
     libboost-program-options-dev \
+    libboost-system-dev \
     libeigen3-dev \
     libopenimageio-dev \
     libopenexr-dev \
@@ -62,6 +63,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends software-proper
     libglew-dev \
     libblas-dev \
     liblapack-dev \
+    qt6-base-dev \
+    qt6-svg-dev \
+    libgl1-mesa-dev \
+    libglu1-mesa-dev \
     && rm -rf /var/lib/apt/lists/*
 
 RUN cd /usr/lib/x86_64-linux-gnu && \
@@ -94,13 +99,14 @@ RUN git clone --depth=1 https://github.com/colmap/colmap.git /tmp/colmap-src && 
     # checkout latest tagged release. change to 'main' to checkout the latest arch
     git checkout $(git describe --tags $(git rev-list --tags --max-count=1)) && \
     mkdir build && cd build && \
+    export QT_QPA_PLATFORM=offscreen && \
     cmake .. \
       -DCMAKE_BUILD_TYPE=Release \
       # 75;80;86;89;90
       -DCMAKE_CUDA_ARCHITECTURES="$(echo "${COMPUTE_LEVEL}" | sed 's/\.//g')" \
-      -DGUI_ENABLED=OFF \
+      -DGUI_ENABLED=ON \
       -DCUDA_ENABLED=ON \
-      -DOPENGL_ENABLED=OFF \
+      -DOPENGL_ENABLED=ON \
       -DTESTS_ENABLED=OFF \
       -DLIFT_WITH_CUDA=ON \
       -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++ \
@@ -152,6 +158,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends software-proper
     libmetis5 \
     libgl1 \
     libegl1 \
+    libgl1-mesa-glx \
     libglvnd-dev \
     libgomp1 \
     libgflags-dev \
@@ -160,6 +167,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends software-proper
     libgoogle-glog-dev \
     libgtest-dev \
     wget \
+    curl \
+    mesa-utils \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
@@ -326,13 +335,16 @@ RUN ns-install-cli && pip3 cache purge
 RUN echo "alias e='exit'" >> /root/.bashrc && \
     echo "alias cls='clear'" >> /root/.bashrc && \
     echo "alias gluemap='gluemap-demo'" >> /root/.bashrc && \
-    echo "export QT_QPA_PLATFORM=offscreen" >> /root/.bashrc && \
     echo "export MAX_JOBS=$(($(nproc) / 2))" >> /root/.bashrc && \
-    echo "mkdir -p /NERFSTUDIO/gluemap_checkpoints && ln -s /NERFSTUDIO/gluemap_checkpoints /install/gluemap/checkpoints" >> /root/.bashrc
-
+    echo "mkdir -p /NERFSTUDIO/gluemap_checkpoints && ln -s /NERFSTUDIO/gluemap_checkpoints /install/gluemap/checkpoints" >> /root/.bashrc && \
+    echo "$DOCKER_AUTOEXEC" >> /root/.bashrc
+#add-apt-repository -y ppa:kisak/kisak-mesa; apt update; apt-get install -y libgl1-mesa-dri libglx-mesa0 mesa-vulkan-drivers
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     libglew2.2 \
+    libqt6openglwidgets6t64 \
+    libqt6svg6 \
+    qt6-wayland \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
