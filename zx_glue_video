@@ -1,7 +1,9 @@
 #!/bin/sh
 if [ -z "$1" ] || [ -z "$2" ]; then
   echo "Turn a video into mapped images using GLUEMAP."
-  echo "Usage: $0 <video_file> <output_dir> [optional: frame stepping]"
+  echo "Usage: $0 <video_file> <output_dir> [optional: frame stepping] [optional: extra flags]"
+  echo ""
+  echo "Note: for weaker cards, use extra flags '--skip_doppelgangers True --batch_size 1', and use downscaled footage (eg: 720p) "
   exit 1
 fi
 
@@ -13,7 +15,9 @@ fi
 FN=$(realpath $1)
 DN=$(realpath $2)
 NFRAMES=${3:-2}
-shift 2
+
+shift 3
+
 export QT_QPA_PLATFORM=offscreen
 echo "Using video file: "$FN
 echo "Writing to output dir: "$DN
@@ -40,7 +44,7 @@ gluemap-demo \
   --path_tracker /NERFSTUDIO/gluemap_checkpoints/vggsfm_v2_0_0_track_predictor.bin \
   --path_dg /NERFSTUDIO/gluemap_checkpoints/checkpoint-dg+visym.pth \
   --subfolder_regex ".*" \
-  --is_sequential
+  --is_sequential $@
 
 echo Done!
 

@@ -18,7 +18,7 @@ sleep 3
 
 echo "Running Nerfstudio frame extraction..."
 ns-process-data video --data $FN --output-dir $DN --skip-colmap "$@" #--num-frames-target 650
-
+START_TIME=$(date +%s)
 echo "Creating COLMAP v4 database + extracting features..."
 mkdir -p $DN/colmap
 colmap feature_extractor \
@@ -27,23 +27,37 @@ colmap feature_extractor \
   --FeatureExtraction.use_gpu 1 \
   --FeatureExtraction.gpu_index 0 \
   --ImageReader.single_camera 1 \
-  --ImageReader.camera_model SIMPLE_RADIAL \
+  --ImageReader.camera_model OPENCV \
   --FeatureExtraction.num_threads $(($(nproc) / 2)) 
-# Switch to OPENCV as cam model if things start breaking
+# Switch between OPENCV / SIMPLE_RADIAL as cam model if things start breaking
 
 echo "Matching features sequentially..."
 
 VOCABFLAGS="--SequentialMatching.loop_detection 0"
 
-if [ -f /NERFSTUDIO/weights/vocab_tree_faiss_flickr100K_words32K.bin ]; then
-  echo "Enabling vocabtrees for better accuracy..."
-  VOCABFLAGS="--SequentialMatching.loop_detection 1 --SequentialMatching.vocab_tree_path /NERFSTUDIO/weights/vocab_tree_faiss_flickr100K_words32K.bin"
-fi
+# Switch to using dedicated vocab tree stage
+# if [ -f /NERFSTUDIO/weights/vocab_tree_faiss_flickr100K_words32K.bin ]; then
+#   echo "Enabling vocabtrees for better accuracy..."
+#   VOCABFLAGS="--SequentialMatching.loop_detection 1 --SequentialMatching.vocab_tree_path /NERFSTUDIO/weights/vocab_tree_faiss_flickr100K_words32K.bin"
+# fi
 
 colmap sequential_matcher \
   --database_path $DN/colmap/database.db \
   --FeatureMatching.num_threads $(($(nproc) - 2)) \
-  --SequentialMatching.overlap 10 $VOCABFLAGS
+  --SequentialMatching.overlap 20 $VOCABFLAGS \
+  --SequentialMatching.quadratic_steps 1
+
+if [ -f /NERFSTUDIO/weights/vocab_tree_faiss_flickr100K_words256K.bin ]; then
+  echo "Adding secondary dedicated vocab tree match stage..."
+  colmap vocab_tree_matcher \
+    --database_path $DN/colmap/database.db \
+    --FeatureMatching.num_threads $(($(nproc) - 2)) \
+    --VocabTreeMatching.vocab_tree_path /NERFSTUDIO/weights/vocab_tree_faiss_flickr100K_words256K.bin \
+    --VocabTreeMatching.num_images 50 \
+    --VocabTreeMatching.num_nearest_neighbors 5
+else
+  echo "Consider running 'zx_download_assets medium' to get enable vocab tree processing."
+fi
 
 echo "Calibrating database..."
 cp $DN/colmap/database.db $DN/colmap/database_calibrated.db
@@ -56,11 +70,14 @@ echo "Using GLOMAP for reconstruction..."
 colmap global_mapper \
   --database_path $DN/colmap/database_calibrated.db \
   --image_path $DN/images \
-  --output_path $DN/colmap/sparse
+  --output_path $DN/colmap/sparse \
+  --Mapper.num_threads $(($(nproc) - 2))
 
-echo Done!
+DURATION=$(( ( $(date +%s) - $START_TIME ) / 60 ))
 
-exit
+echo Done in $DURATION minutes!
+
+exit 0
 
 # mkdir -p $DN/colmap/dense
 # # ts is not worth it vro

@@ -337,7 +337,19 @@ RUN echo "alias e='exit'" >> /root/.bashrc && \
     echo "alias gluemap='gluemap-demo'" >> /root/.bashrc && \
     echo "export MAX_JOBS=$(($(nproc) / 2))" >> /root/.bashrc && \
     echo "mkdir -p /NERFSTUDIO/gluemap_checkpoints && ln -s /NERFSTUDIO/gluemap_checkpoints /install/gluemap/checkpoints" >> /root/.bashrc && \
-    echo "$DOCKER_AUTOEXEC" >> /root/.bashrc
+    echo "$DOCKER_AUTOEXEC" >> /root/.bashrc && \
+    echo "export TORCH_CUDNN_V8_API_ENABLED=1" >> /root/.bashrc && \
+    echo "export TORCH_ALLOW_TF32_CUBLAS_OVERRIDE=1" >> /root/.bashrc && \
+    echo "mkdir -p /root/.cache/torchinductor" >> /root/.bashrc && \
+    echo "mkdir -p /root/.cache/triton" >> /root/.bashrc && \
+    echo "export TORCHINDUCTOR_CACHE_DIR=/root/.cache/torchinductor" >> /root/.bashrc && \
+    echo "export TRITON_CACHE_DIR=/root/.cache/triton" >> /root/.bashrc && \
+    echo "export TORCHINDUCTOR_FX_GRAPH_CACHE=1" >> /root/.bashrc && \
+    echo "export TORCHINDUCTOR_AUTOGRAD_CACHE=1" >> /root/.bashrc && \
+    echo "export TORCHINDUCTOR_MAX_AUTOTUNE=1" >> /root/.bashrc && \
+    echo "cls; nvcc --version | grep 'Cuda compilation tools'; colmap --version; echo ''; echo 'Welcome to SfM-docker!'; echo ''; cd /NERFSTUDIO/" >> /root/.bashrc
+    
+
 #add-apt-repository -y ppa:kisak/kisak-mesa; apt update; apt-get install -y libgl1-mesa-dri libglx-mesa0 mesa-vulkan-drivers
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
