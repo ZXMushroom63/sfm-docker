@@ -1,5 +1,5 @@
 @echo off
-wsl docker run --gpus all -it --user root --rm --net=host ^
+wsl docker run --gpus all -it --user root --rm ^
     -v "/mnt/c/Users/$(cmd.exe /c 'echo %USERNAME%' | tr -d '\r')/sfm-docker:/NERFSTUDIO" ^
     -v "/mnt/c/Users/$(cmd.exe /c 'echo %USERNAME%' | tr -d '\r')/sfm-docker/.cache:/root/.cache" ^
     -v /tmp/.X11-unix:/tmp/.X11-unix ^
