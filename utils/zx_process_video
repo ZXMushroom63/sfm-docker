@@ -35,17 +35,16 @@ echo "Matching features sequentially..."
 
 VOCABFLAGS="--SequentialMatching.loop_detection 0"
 
-# Switch to using dedicated vocab tree stage
-# if [ -f /NERFSTUDIO/weights/vocab_tree_faiss_flickr100K_words32K.bin ]; then
-#   echo "Enabling vocabtrees for better accuracy..."
-#   VOCABFLAGS="--SequentialMatching.loop_detection 1 --SequentialMatching.vocab_tree_path /NERFSTUDIO/weights/vocab_tree_faiss_flickr100K_words32K.bin"
-# fi
+Switch to using dedicated vocab tree stage
+if [ -f /NERFSTUDIO/weights/vocab_tree_faiss_flickr100K_words256K.bin ]; then
+  echo "Enabling vocabtrees for better accuracy..."
+  VOCABFLAGS="--SequentialMatching.loop_detection 1 --SequentialMatching.vocab_tree_path /NERFSTUDIO/weights/vocab_tree_faiss_flickr100K_words256K.bin"
+fi
 
 colmap sequential_matcher \
   --database_path $DN/colmap/database.db \
   --FeatureMatching.num_threads $(($(nproc) - 2)) \
-  --SequentialMatching.overlap 20 $VOCABFLAGS \
-  --SequentialMatching.quadratic_steps 1
+  --SequentialMatching.overlap 20 $VOCABFLAGS
 
 if [ -f /NERFSTUDIO/weights/vocab_tree_faiss_flickr100K_words256K.bin ]; then
   echo "Adding secondary dedicated vocab tree match stage..."
@@ -71,7 +70,7 @@ colmap global_mapper \
   --database_path $DN/colmap/database_calibrated.db \
   --image_path $DN/images \
   --output_path $DN/colmap/sparse \
-  --Mapper.num_threads $(($(nproc) - 2))
+  --GlobalMapper.num_threads $(($(nproc) - 2))
 
 DURATION=$(( ( $(date +%s) - $START_TIME ) / 60 ))
 
