@@ -35,11 +35,11 @@ echo "Matching features sequentially..."
 
 VOCABFLAGS="--SequentialMatching.loop_detection 0"
 
-Switch to using dedicated vocab tree stage
-if [ -f /NERFSTUDIO/weights/vocab_tree_faiss_flickr100K_words256K.bin ]; then
-  echo "Enabling vocabtrees for better accuracy..."
-  VOCABFLAGS="--SequentialMatching.loop_detection 1 --SequentialMatching.vocab_tree_path /NERFSTUDIO/weights/vocab_tree_faiss_flickr100K_words256K.bin"
-fi
+# Switch to using dedicated vocab tree stage
+# if [ -f /NERFSTUDIO/weights/vocab_tree_faiss_flickr100K_words256K.bin ]; then
+#   echo "Enabling vocabtrees for better accuracy..."
+#   VOCABFLAGS="--SequentialMatching.loop_detection 1 --SequentialMatching.vocab_tree_path /NERFSTUDIO/weights/vocab_tree_faiss_flickr100K_words256K.bin"
+# fi
 
 colmap sequential_matcher \
   --database_path $DN/colmap/database.db \
