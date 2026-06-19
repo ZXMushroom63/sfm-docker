@@ -269,9 +269,11 @@ RUN mkdir -p /install/gluemap && git clone --recurse-submodules https://github.c
     /opt/gluemap-env/bin/pip install --no-cache-dir --upgrade pip setuptools wheel scikit-build-core && \
     /opt/gluemap-env/bin/pip install --no-cache-dir -e . \
     --config-settings=cmake.args="-DBoost_INCLUDE_DIR=/usr/include" \
-    --config-settings=cmake.args="-DCeres_DIR=/usr/local/lib/cmake/Ceres" &&\
+    --config-settings=cmake.args="-DCeres_DIR=/usr/local/lib/cmake/Ceres" \
+    --extra-index-url https://download.pytorch.org/whl/cu126 && \
     cd /install/gluemap/thirdparty/doppelgangers-plusplus/dust3r/croco/models/curope && \
     /opt/gluemap-env/bin/python setup.py build_ext --inplace
+    
 
 # RUN mkdir -p /gluemap && git clone --depth=1 --recurse-submodules --shallow-submodules https://github.com/colmap/gluemap.git /gluemap && \
 #     cd /gluemap && \
@@ -347,7 +349,11 @@ RUN echo "alias e='exit'" >> /root/.bashrc && \
     echo "export TORCHINDUCTOR_FX_GRAPH_CACHE=1" >> /root/.bashrc && \
     echo "export TORCHINDUCTOR_AUTOGRAD_CACHE=1" >> /root/.bashrc && \
     echo "export TORCHINDUCTOR_MAX_AUTOTUNE=1" >> /root/.bashrc && \
-    echo "cls; nvcc --version | grep 'Cuda compilation tools'; colmap --version; echo ''; echo 'Welcome to SfM-docker!'; echo ''; cd /NERFSTUDIO/" >> /root/.bashrc
+    echo "export TORCH_CUDNN_SDPA_ENABLED=1" >> /root/.bashrc && \
+    echo "export TORCH_FLASH_SDPA_ENABLED=1" >> /root/.bashrc && \
+    echo "export TORCH_MEM_EFFICIENT_SDPA_ENABLED=1" >> /root/.bashrc && \
+    echo "export TORCH_MATH_SDPA_ENABLED=1" >> /root/.bashrc && \
+    echo "cls; nvcc --version | grep 'Cuda compilation tools'; colmap --version; python3 -c \"import sys, torch; print(f\\\"Python: {sys.version.split()[0]} | PyTorch: {torch.__version__} | Backend: {'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'}\\\")\"; echo ''; echo 'Welcome to SfM-docker!'; echo ''; cd /NERFSTUDIO/" >> /root/.bashrc
     
 
 #add-apt-repository -y ppa:kisak/kisak-mesa; apt update; apt-get install -y libgl1-mesa-dri libglx-mesa0 mesa-vulkan-drivers

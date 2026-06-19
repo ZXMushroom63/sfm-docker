@@ -3,7 +3,7 @@ if [ -z "$1" ] || [ -z "$2" ]; then
   echo "Turn a video into mapped images using GLUEMAP."
   echo "Usage: $0 <video_file> <output_dir> [optional: frame stepping] [optional: extra flags]"
   echo ""
-  echo "Note: for weaker cards, use extra flags '--skip_doppelgangers True --batch_size 1', and use downscaled footage (eg: 720p) "
+  echo "Note: for weaker cards, use extra flags '--skip_doppelgangers --batch_size 1', and use downscaled footage (eg: 720p) "
   exit 1
 fi
 
