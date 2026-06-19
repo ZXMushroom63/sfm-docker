@@ -375,21 +375,21 @@ ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 ENV TORCH_FORCE_WEIGHTS_ONLY_LOAD=0
 ENV TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1
 
-RUN wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/panorama_sfm.py && \
+RUN wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/utils/panorama_sfm.py && \
     chmod +x /usr/local/bin/panorama_sfm.py && \
-    wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/zx_process_video && \
+    wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/utils/zx_process_video && \
     chmod +x /usr/local/bin/zx_process_video && \
-    wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/zx_process_video_360 && \
+    wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/utils/zx_process_video_360 && \
     chmod +x /usr/local/bin/zx_process_video_360 && \
-    wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/zx_download_assets && \
+    wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/utils/zx_download_assets && \
     chmod +x /usr/local/bin/zx_download_assets && \
-    wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/zx_splat && \
+    wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/utils/zx_splat && \
     chmod +x /usr/local/bin/zx_splat && \
-    wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/zx_glue_video && \
+    wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/utils/zx_glue_video && \
     chmod +x /usr/local/bin/zx_glue_video && \
-    wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/gluemap-demo && \
+    wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/utils/gluemap-demo && \
     chmod +x /usr/local/bin/gluemap-demo && \
-    wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/zx_gluemap_setup && \
+    wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/utils/zx_gluemap_setup && \
     chmod +x /usr/local/bin/zx_gluemap_setup
 
 USER root
