@@ -19,4 +19,5 @@ wsl docker run --gpus all -it --user root --rm ^
     -e WA_WCG_DISABLE_BLIT_OPTIMIZATION=1 ^
     --device /dev/dxg ^
     --shm-size=12gb ^
+    -p 7007:7007 ^
     nerfstudio-colmap4 bash
