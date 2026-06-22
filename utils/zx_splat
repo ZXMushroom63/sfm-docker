@@ -2,6 +2,10 @@
 if [ -z "$1" ] || [ -z "$2" ]; then
   echo "Example script to splat mapped frames using nerfstudio's splatfacto. I recommend not using these settings."
   echo "Usage: $0 <mapped data dir> <splat dir> [downscale_factor] [extra pipeline flags]"
+  echo "";
+  echo "Useful extra flags: "
+  echo " --pipeline.model.cull-alpha-thresh 0.1"
+  echo " --pipeline.model.strategy mcmc"
   exit 1
 fi
 
@@ -11,13 +15,14 @@ if [ "$DOWNSCALE" != "1" ]; then
   DSFLAG=""
 fi
 
-shift 3
-
 mkdir -p $2
-ns-train splatfacto --output-dir $(realpath $2) \
+P_1=$(realpath $1)
+P_2=$(realpath $2)
+shift 3
+ns-train splatfacto --output-dir $(realpath $P_2) \
     --pipeline.model.use_bilateral_grid True \
     --pipeline.model.sh-degree 2 \
     --pipeline.model.use-scale-regularization True \
-    $DSFLAG $@ \
-    --data $(realpath $1) colmap \
+    $DSFLAG "$@" \
+    --data $(realpath $P_1) colmap \
         --downscale-factor $DOWNSCALE
