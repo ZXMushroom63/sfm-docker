@@ -1,6 +1,7 @@
 *.mp4
 .cache
 experiment/
+experiment2/
 processed/
 out/
 splat/

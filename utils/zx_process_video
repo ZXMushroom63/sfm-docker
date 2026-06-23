@@ -18,6 +18,9 @@ sleep 3
 
 echo "Running Nerfstudio frame extraction..."
 ns-process-data video --gpu --data $FN --output-dir $DN --skip-colmap "$@" #--num-frames-target 650
+
+find vid/ -type f -name "*.jpg" -print0 | xargs -0 -n 100 -P $(nproc) zx_find_blurry.py 2000 | xargs echo
+
 START_TIME=$(date +%s)
 echo "Creating COLMAP v4 database + extracting features..."
 mkdir -p $DN/colmap
