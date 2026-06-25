@@ -11,10 +11,10 @@ fi
 
 
 
-SCRIPT_PATH=$(which panorama_sfm.py)
+SCRIPT_PATH=$(which panorama_sfm_patched.py)
 
-if [ -f ./panorama_sfm.py ]; then
-  SCRIPT_PATH=$(realpath ./panorama_sfm.py)
+if [ -f ./panorama_sfm_patched.py ]; then
+  SCRIPT_PATH=$(realpath ./panorama_sfm_patched.py)
 fi
 
 if [ "$1" = "--extraflags" ]; then

@@ -376,7 +376,10 @@ ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 ENV TORCH_FORCE_WEIGHTS_ONLY_LOAD=0
 ENV TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1
 
-RUN wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/utils/panorama_sfm.py && \
+RUN wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/utils/panorama_sfm_patched.py && \
+    chmod +x /usr/local/bin/panorama_sfm_patched.py && \
+    wget -P /usr/local/bin/ https://raw.githubusercontent.com/colmap/colmap/refs/heads/main/python/examples/panorama_sfm.py && \
+    sed -i '1s|^|#!/usr/bin/python3\n|' /usr/local/bin/panorama_sfm.py && \
     chmod +x /usr/local/bin/panorama_sfm.py && \
     wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/utils/zx_process_video && \
     chmod +x /usr/local/bin/zx_process_video && \
