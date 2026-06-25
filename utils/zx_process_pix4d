@@ -60,6 +60,8 @@ with open(pfile("pixdata/projectMetadata.json"), "r") as f:
     projectMeta = json.load(f)
 
 AR_positionData = {}
+xy_accuracy = 0
+z_accuracy = 0
 with open(pfile("pixdata/_gps/_all_locations.csv"), "r") as f:
     reader = csv.reader(f)
 
@@ -72,6 +74,8 @@ with open(pfile("pixdata/_gps/_all_locations.csv"), "r") as f:
     IDX_LAT = header.index("latitude")
     IDX_LON = header.index("longitude")
     IDX_ALT = header.index("altitude")
+    IDX_XY = header.index("xyAccuracy")
+    IDX_Z = header.index("zAccuracy")
 
     marker = []
     while not (len(marker) == 1 and marker[0].lower().endswith("ar")):
@@ -88,6 +92,8 @@ with open(pfile("pixdata/_gps/_all_locations.csv"), "r") as f:
             "longitude": float(row[IDX_LON]),
             "altitude": float(row[IDX_ALT]),
         }
+        xy_accuracy = max(xy_accuracy, float(row[IDX_XY]))
+        z_accuracy = max(z_accuracy, float(row[IDX_Z]))
 
 quietRun(["mkdir", "-p", pfile("images")])
 quietRun(["sh", "-c", f"cp {pfile("pixdata/Image_*")} {pfile("images/")}"])
@@ -124,8 +130,10 @@ subprocess.run(
         "1",
         # "--SiftExtraction.estimate_affine_shape", "1",
         # "--SiftExtraction.domain_size_pooling", "1",
-        "--SiftExtraction.max_num_features", "8192",
-        "--FeatureExtraction.num_threads", "-1",
+        "--SiftExtraction.max_num_features",
+        "8192",
+        "--FeatureExtraction.num_threads",
+        "-1",
     ]
 )
 
@@ -155,7 +163,7 @@ subprocess.run(
         "--SpatialMatching.max_num_neighbors",
         "10",
         "--SpatialMatching.max_distance",
-        "0.00005",  # radius limit (~5 meters)
+        "5",  # radius limit (~5 meters)
         "--FeatureMatching.use_gpu",
         "1",
         "--FeatureMatching.guided_matching",
@@ -183,19 +191,27 @@ if EXPERIMENTAL_GLOMAP:
         ]
     )
 else:
-    print("Step 3: Incremental mapper...")
+    print("Step 3: Pose prior mapper...")
     subprocess.run(
         [
             "colmap",
-            "mapper",
+            "pose_prior_mapper",
             "--database_path",
             db_path,
             "--image_path",
             images_dir,
             "--output_path",
             pfile("colmap/sparse"),
+            "--ref_images_path",
+            priors_file,
             "--Mapper.num_threads",
             "-1",
+            "--Mapper.filter_max_reproj_error",
+            "1.5",
+            "--Mapper.min_num_matches",
+            "35",
+            "--Mapper.max_reg_trials",
+            "1"
         ]
     )
 
@@ -219,13 +235,20 @@ subprocess.run(
 )
 
 print("Step 4b: Model orientation alignment...")
-subprocess.run([
-    "colmap", "model_orientation_aligner",
-    "--input_path", pfile("colmap/sparse/0"),
-    "--output_path", pfile("colmap/sparse/0"),
-    "--image_path", images_dir,
-    "--method", "IMAGE-ORIENTATION"
-])
+subprocess.run(
+    [
+        "colmap",
+        "model_orientation_aligner",
+        "--input_path",
+        pfile("colmap/sparse/0"),
+        "--output_path",
+        pfile("colmap/sparse/0"),
+        "--image_path",
+        images_dir,
+        "--method",
+        "IMAGE-ORIENTATION",
+    ]
+)
 
 
 print("")
