@@ -39,7 +39,6 @@ colmap feature_extractor \
   --database_path $DN/colmap/database.db \
   --image_path $DN/images \
   --FeatureExtraction.use_gpu 1 \
-  --FeatureExtraction.gpu_index 0 \
   --ImageReader.single_camera 1 \
   --ImageReader.camera_model OPENCV \
   --FeatureExtraction.num_threads $(($(nproc) - 2)) 
@@ -57,6 +56,7 @@ VOCABFLAGS="--SequentialMatching.loop_detection 0"
 
 colmap sequential_matcher \
   --database_path $DN/colmap/database.db \
+  --FeatureMatching.use_gpu 1 \
   --FeatureMatching.num_threads $(($(nproc) - 2)) \
   --SequentialMatching.overlap 22 $VOCABFLAGS
 
@@ -113,7 +113,6 @@ exit 0
 #   --workspace_path $DN/colmap/dense \
 #   --workspace_format COLMAP \
 #   --PatchMatchStereo.geom_consistency 1 \
-#   --PatchMatchStereo.gpu_index 0
 
 # echo "Fusing dense depth maps into a 3D point cloud..."
 # colmap stereo_fusion \

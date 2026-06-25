@@ -1,0 +1,238 @@
+#!/usr/bin/python3
+
+import sys
+import pathlib
+import os
+import json
+import csv
+import subprocess
+import time
+
+EXPERIMENTAL_GLOMAP = False
+
+
+def quietRun(args):
+    subprocess.run(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+if len(sys.argv) < 3:
+    print(
+        "Usage: zx_process_pix4d <path/to/pix4d_raw_exported.zip> <path/to/dest> [global]",
+        file=sys.stderr,
+    )
+    print(
+        "Example: zx_process_pix4d vid/simple_demo_pix4d.zip experiment/ global",
+        file=sys.stderr,
+    )
+    print(
+        "Built for pix4Dcatch v1.30.0, using a no-account patch and not using RTK",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+
+zip_path = str(pathlib.Path(sys.argv[1]).absolute())
+dest_path = str(pathlib.Path(sys.argv[2]).absolute())
+
+if len(sys.argv) > 3 and sys.argv[3].lower().strip() == "global":
+    print("USING EXPERIMENTAL GLOBAL MAPPER BACKEND")
+    EXPERIMENTAL_GLOMAP = True
+
+
+def pfile(strPath):
+    return dest_path + "/" + strPath
+
+
+start_time = time.time()
+
+print("Extracting pix4d data...")
+quietRun(["rm", "-r", dest_path])
+quietRun(["unzip", zip_path, "-d", dest_path])
+
+subdir = str(
+    [x for x in pathlib.Path(sys.argv[2]).absolute().iterdir() if x.is_dir()][0]
+)
+
+quietRun(["mv", subdir, dest_path + "/pixdata"])
+
+projectMeta = None
+with open(pfile("pixdata/projectMetadata.json"), "r") as f:
+    projectMeta = json.load(f)
+
+AR_positionData = {}
+with open(pfile("pixdata/_gps/_all_locations.csv"), "r") as f:
+    reader = csv.reader(f)
+
+    header = next(reader)
+
+    IDX_IMAGE = header.index("image")
+    IDX_ROLL = header.index("roll")
+    IDX_PITCH = header.index("pitch")
+    IDX_YAW = header.index("yaw")
+    IDX_LAT = header.index("latitude")
+    IDX_LON = header.index("longitude")
+    IDX_ALT = header.index("altitude")
+
+    marker = []
+    while not (len(marker) == 1 and marker[0].lower().endswith("ar")):
+        marker = next(reader)
+
+    for row in reader:
+        if row[0].strip().startswith("//"):
+            break
+        AR_positionData[row[IDX_IMAGE]] = {
+            "roll": float(row[IDX_ROLL]),
+            "pitch": float(row[IDX_PITCH]),
+            "yaw": float(row[IDX_YAW]),
+            "latitude": float(row[IDX_LAT]),
+            "longitude": float(row[IDX_LON]),
+            "altitude": float(row[IDX_ALT]),
+        }
+
+quietRun(["mkdir", "-p", pfile("images")])
+quietRun(["sh", "-c", f"cp {pfile("pixdata/Image_*")} {pfile("images/")}"])
+
+print("Preparing COLMAP workspace and spatial priors...")
+quietRun(["mkdir", "-p", pfile("colmap")])
+quietRun(["mkdir", "-p", pfile("colmap/sparse")])
+
+db_path = pfile("colmap/database.db")
+images_dir = pfile("images")
+priors_file = pfile("colmap/spatial_priors.txt")
+
+with open(priors_file, "w") as pf:
+    for img_name, data in AR_positionData.items():
+        pf.write(
+            f"{img_name} {data['latitude']} {data['longitude']} {data['altitude']}\n"
+        )
+
+time.sleep(3)
+print("Step 1: Extracting features...")
+subprocess.run(
+    [
+        "colmap",
+        "feature_extractor",
+        "--database_path",
+        db_path,
+        "--image_path",
+        images_dir,
+        "--ImageReader.single_camera",
+        "1",
+        "--ImageReader.camera_model",
+        "OPENCV",
+        "--FeatureExtraction.use_gpu",
+        "1",
+        # "--SiftExtraction.estimate_affine_shape", "1",
+        # "--SiftExtraction.domain_size_pooling", "1",
+        "--SiftExtraction.max_num_features", "8192",
+        "--FeatureExtraction.num_threads", "-1",
+    ]
+)
+
+print("Step 2a: Sequential matching...")
+subprocess.run(
+    [
+        "colmap",
+        "sequential_matcher",
+        "--database_path",
+        db_path,
+        "--SequentialMatching.overlap",
+        "15",
+        "--FeatureMatching.use_gpu",
+        "1",
+        "--FeatureMatching.guided_matching",
+        "1",
+    ]
+)
+
+print("Step 2b: Spatial matching...")
+subprocess.run(
+    [
+        "colmap",
+        "spatial_matcher",
+        "--database_path",
+        db_path,
+        "--SpatialMatching.max_num_neighbors",
+        "10",
+        "--SpatialMatching.max_distance",
+        "0.00005",  # radius limit (~5 meters)
+        "--FeatureMatching.use_gpu",
+        "1",
+        "--FeatureMatching.guided_matching",
+        "1",
+    ]
+)
+
+if EXPERIMENTAL_GLOMAP:
+    print("Step 3a: Calibrating view graph...")
+    subprocess.run(["colmap", "view_graph_calibrator", "--database_path", db_path])
+
+    print("Step 3b: Global reconstruction...")
+    subprocess.run(
+        [
+            "colmap",
+            "global_mapper",
+            "--database_path",
+            db_path,
+            "--image_path",
+            images_dir,
+            "--output_path",
+            pfile("colmap/sparse"),
+            "--GlobalMapper.num_threads",
+            "-1",
+        ]
+    )
+else:
+    print("Step 3: Incremental mapper...")
+    subprocess.run(
+        [
+            "colmap",
+            "mapper",
+            "--database_path",
+            db_path,
+            "--image_path",
+            images_dir,
+            "--output_path",
+            pfile("colmap/sparse"),
+            "--Mapper.num_threads",
+            "-1",
+        ]
+    )
+
+print("Step 4a: Model alignment...")
+subprocess.run(
+    [
+        "colmap",
+        "model_aligner",
+        "--input_path",
+        pfile("colmap/sparse/0"),
+        "--output_path",
+        pfile("colmap/sparse/0"),
+        pfile("colmap/sparse/0"),
+        pfile("colmap/sparse/0"),
+        "--ref_images_path",
+        priors_file,
+        # "--robust_alignment", "1",
+        "--alignment_max_error",
+        "1.5",
+    ]
+)
+
+print("Step 4b: Model orientation alignment...")
+subprocess.run([
+    "colmap", "model_orientation_aligner",
+    "--input_path", pfile("colmap/sparse/0"),
+    "--output_path", pfile("colmap/sparse/0"),
+    "--image_path", images_dir,
+    "--method", "IMAGE-ORIENTATION"
+])
+
+
+print("")
+print("[ PROJECT INFO ]")
+print(f"Name: {projectMeta["name"]}")
+print(f"Trigger Method: {projectMeta["trigger"]["triggerType"]}")
+print(f"Distance Covered: {int(projectMeta["distanceTravelled"])}m")
+print(f"Frame Count: {projectMeta["initial_image_count"]} images")
+print("")
+print(f"Completed in {int(time.time() - start_time)}s")

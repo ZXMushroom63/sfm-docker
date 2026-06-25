@@ -338,7 +338,7 @@ def run(args: argparse.Namespace) -> None:
     
     extraction_opts = pycolmap.FeatureExtractionOptions()
     extraction_opts.use_gpu = True
-    extraction_opts.gpu_index = "0"
+    #extraction_opts.gpu_index = "0"
     
     reader_opts = pycolmap.ImageReaderOptions(mask_path=mask_dir)
     reader_opts.camera_model = "SIMPLE_PINHOLE"
@@ -368,7 +368,7 @@ def run(args: argparse.Namespace) -> None:
     matching_options = pycolmap.FeatureMatchingOptions()
     matching_options.rig_verification = True
     matching_options.use_gpu = True
-    matching_options.gpu_index = "0"
+    #matching_options.gpu_index = "0"
     matching_options.skip_image_pairs_in_same_frame = True
     
     if args.matcher == "sequential":

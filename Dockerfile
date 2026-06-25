@@ -393,6 +393,8 @@ RUN wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-d
     wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/utils/zx_gluemap_setup && \
     chmod +x /usr/local/bin/zx_gluemap_setup && \
     wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/utils/zx_find_blurry.py && \
-    chmod +x /usr/local/bin/zx_find_blurry.py
+    chmod +x /usr/local/bin/zx_find_blurry.py && \
+    wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/utils/zx_process_pix4d && \
+    chmod +x /usr/local/bin/zx_process_pix4d
 
 USER root
