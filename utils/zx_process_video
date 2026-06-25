@@ -1,13 +1,15 @@
 #!/bin/sh
 if [ -z "$1" ] || [ -z "$2" ]; then
   echo "Turn a video into mapped images using COLMAP + GLOMAP."
-  echo "Usage: $0 <video_file> <output_dir> [ns-process-data flags]"
+  echo "Usage: $0 <video_file> <output_dir> [min_sharpness(=1000)] [ns-process-data flags]"
+  echo "For example: $0 vid/basic_scan.mp4 experiment/ 1200 --num-frames-target 1000 --verbose"
   exit 1
 fi
 
 FN=$(realpath $1)
 DN=$(realpath $2)
-shift 2
+MINIMUM_SHARPNESS=${3:-1000}
+shift 3
 export QT_QPA_PLATFORM=offscreen
 echo "Using video file: "$FN
 echo "Writing to output dir: "$DN
@@ -19,7 +21,16 @@ sleep 3
 echo "Running Nerfstudio frame extraction..."
 ns-process-data video --gpu --data $FN --output-dir $DN --skip-colmap "$@" #--num-frames-target 650
 
-find vid/ -type f -name "*.jpg" -print0 | xargs -0 -n 100 -P $(nproc) zx_find_blurry.py 2000 | xargs echo
+find "$DN/images/" -type f -name "*.png" -print0 | \
+    xargs -0 -n 100 -P $(nproc) zx_find_blurry.py $MINIMUM_SHARPNESS > $DN/__blurry_files.txt
+
+for filepath in $(cat $DN/__blurry_files.txt); do
+    filename=$(basename "$filepath")
+    echo "Purging $filename..."
+    rm -f "$DN"/images*/"$filename"
+done
+
+#rm $DN/__blurry_files.txt
 
 START_TIME=$(date +%s)
 echo "Creating COLMAP v4 database + extracting features..."

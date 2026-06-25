@@ -364,6 +364,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libqt6svg6 \
     qt6-wayland \
     ca-certificates \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
 
 ENV TORCH_CUDA_ARCH_LIST=${COMPUTE_LEVEL}

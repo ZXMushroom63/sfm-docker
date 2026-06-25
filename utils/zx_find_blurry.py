@@ -23,7 +23,7 @@ def find_laplacian_variance(path):
 if __name__ == "__main__":
     path = ""
     if len(sys.argv) < 3:
-        print("Usage: zx_find_blurry.py <min_sharpness> <paths/to/images.png>")
+        print("Usage: zx_find_blurry.py <min_sharpness> <paths/to/images.png>", file=sys.stderr)
         sys.exit(1)
         
     min_sharp = int(sys.argv[1])
