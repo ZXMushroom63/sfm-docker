@@ -7,6 +7,7 @@ import json
 import csv
 import subprocess
 import time
+import math
 
 EXPERIMENTAL_GLOMAP = False
 
@@ -59,6 +60,10 @@ projectMeta = None
 with open(pfile("pixdata/projectMetadata.json"), "r") as f:
     projectMeta = json.load(f)
 
+if projectMeta["locationInformation"]["coordinateSystem"]["name"] != "WGS 84":
+    print("Expected WGS 84 coordinate system!")
+    exit(1)
+
 AR_positionData = {}
 xy_accuracy = 0
 z_accuracy = 0
@@ -106,10 +111,25 @@ db_path = pfile("colmap/database.db")
 images_dir = pfile("images")
 priors_file = pfile("colmap/spatial_priors.txt")
 
+first_img = list(AR_positionData.keys())[0]
+ref_lat = AR_positionData[first_img]['latitude']
+ref_lon = AR_positionData[first_img]['longitude']
+ref_alt = AR_positionData[first_img]['altitude']
+
+R_a = 6378137.0
+
 with open(priors_file, "w") as pf:
     for img_name, data in AR_positionData.items():
+        
+        dlat = math.radians(data['latitude'] - ref_lat)
+        dlon = math.radians(data['longitude'] - ref_lon)
+        
+        x = dlon * R_a * math.cos(math.radians(ref_lat))
+        y = dlat * R_a
+        z = data['altitude'] - ref_alt
+        
         pf.write(
-            f"{img_name} {data['latitude']} {data['longitude']} {data['altitude']}\n"
+            f"{img_name} {x} {y} {z}\n"
         )
 
 time.sleep(3)
@@ -228,6 +248,10 @@ subprocess.run(
         pfile("colmap/sparse/0"),
         "--ref_images_path",
         priors_file,
+        "--ref_is_gps",
+        "0",
+        "--alignment_type",
+        "custom",
         # "--robust_alignment", "1",
         "--alignment_max_error",
         "1.5",
