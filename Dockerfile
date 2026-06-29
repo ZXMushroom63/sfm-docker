@@ -374,7 +374,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     unzip \
     cudnn9-cuda-12 \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /opt/cudnn9/lib \
+    && mv /usr/lib/x86_64-linux-gnu/libcudnn* /opt/cudnn9/lib/ \
+    && ldconfig
 
 ENV TORCH_CUDA_ARCH_LIST=${COMPUTE_LEVEL}
 
@@ -386,7 +389,7 @@ ENV TORCH_FORCE_WEIGHTS_ONLY_LOAD=0
 ENV TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1
 
 COPY --from=builder /opt/onnx /opt/onnx
-ENV LD_LIBRARY_PATH=/opt/onnx/lib:/usr/local/cuda/lib64:/usr/local/lib:${LD_LIBRARY_PATH}
+ENV LD_LIBRARY_PATH=/opt/onnx/lib:/opt/cudnn9/lib:/usr/local/cuda/lib64:/usr/local/lib:${LD_LIBRARY_PATH}
 RUN echo "/opt/onnx/lib" > /etc/ld.so.conf.d/onnx.conf && ldconfig
 
 RUN wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/utils/panorama_sfm_patched.py && \

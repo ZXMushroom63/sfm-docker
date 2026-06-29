@@ -208,7 +208,7 @@ with open(priors_file, "w") as pf:
         pitch = data["pitch"]
         yaw = data["yaw"]
 
-        pf.write(f"{img_name} {x} {y} {z} {roll} {pitch} {yaw}\n")
+        pf.write(f"{img_name} {x} {y} {z}\n")
 
 time.sleep(3)
 
