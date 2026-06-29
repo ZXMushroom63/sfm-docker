@@ -1,9 +1,14 @@
 #!/bin/sh
 if [ -z "$1" ] || [ -z "$2" ]; then
-  echo "Turn a video into mapped images using COLMAP + GLOMAP."
+  echo "Turn a video into mapped images using COLMAP + GLOMAP + ALIKED + LIGHTGLUE."
   echo "Usage: $0 <video_file> <output_dir> [min_sharpness(=1000)] [ns-process-data flags]"
   echo "For example: $0 vid/basic_scan.mp4 experiment/ 1200 --num-frames-target 1000 --verbose"
   exit 1
+fi
+
+if [ ! -f /NERFSTUDIO/weights/aliked-lightglue.onnx ]; then
+  echo "Run zx_download_assets onnx first"
+  exit
 fi
 
 FN=$(realpath $1)
@@ -27,7 +32,7 @@ find "$DN/images/" -type f -name "*.png" -print0 | \
 for filepath in $(cat $DN/__blurry_files.txt); do
     filename=$(basename "$filepath")
     echo "Purging $filename..."
-    rm -f "$DN"/images*/"$filename"
+    rm -f $DN/images*/$filename
 done
 
 #rm $DN/__blurry_files.txt
@@ -41,39 +46,33 @@ colmap feature_extractor \
   --FeatureExtraction.use_gpu 1 \
   --ImageReader.single_camera 1 \
   --ImageReader.camera_model OPENCV \
-  --FeatureExtraction.num_threads $(($(nproc) - 2)) 
+  --FeatureExtraction.type ALIKED_N16ROT \
+  --FeatureExtraction.num_threads $(($(nproc) - 2))  \
+  --AlikedExtraction.n16rot_model_path "/NERFSTUDIO/weights/aliked-n16rot.onnx"
 # Switch between OPENCV / SIMPLE_RADIAL as cam model if things start breaking
 
 echo "Matching features sequentially..."
 
-VOCABFLAGS="--SequentialMatching.loop_detection 0"
-
-# Switch to using dedicated vocab tree stage
-# if [ -f /NERFSTUDIO/weights/vocab_tree_faiss_flickr100K_words256K.bin ]; then
-#   echo "Enabling vocabtrees for better accuracy..."
-#   VOCABFLAGS="--SequentialMatching.loop_detection 1 --SequentialMatching.vocab_tree_path /NERFSTUDIO/weights/vocab_tree_faiss_flickr100K_words256K.bin"
-# fi
-
 colmap sequential_matcher \
   --database_path $DN/colmap/database.db \
   --FeatureMatching.use_gpu 1 \
+  --FeatureMatching.type ALIKED_LIGHTGLUE \
   --FeatureMatching.num_threads $(($(nproc) - 2)) \
-  --SequentialMatching.overlap 22 $VOCABFLAGS
+  --SequentialMatching.overlap 22 \
+  --AlikedMatching.lightglue_model_path "/NERFSTUDIO/weights/aliked-lightglue.onnx"
 
-if [ -f /NERFSTUDIO/weights/vocab_tree_faiss_flickr100K_words256K.bin ]; then
-  echo "Adding secondary dedicated vocab tree match stage..."
-  colmap vocab_tree_matcher \
-    --database_path $DN/colmap/database.db \
-    --FeatureMatching.num_threads $(($(nproc) - 2)) \
-    --VocabTreeMatching.vocab_tree_path /NERFSTUDIO/weights/vocab_tree_faiss_flickr100K_words256K.bin \
-    --VocabTreeMatching.num_images 50 \
-    --VocabTreeMatching.num_nearest_neighbors 5 \
-    --FeatureMatching.guided_matching 1 \
-    --FeatureMatching.use_gpu 1 \
-    --TwoViewGeometry.min_num_inliers 30
-else
-  echo "Consider running 'zx_download_assets medium' to enable vocab tree processing."
-fi
+echo "Vocab-treeing..."
+
+colmap vocab_tree_matcher \
+  --database_path $DN/colmap/database.db \
+  --FeatureMatching.num_threads $(($(nproc) - 2)) \
+  --VocabTreeMatching.vocab_tree_path /NERFSTUDIO/weights/vocab_tree_faiss_flickr100K_words64K_aliked_n16rot.bin \
+  --VocabTreeMatching.num_images 50 \
+  --VocabTreeMatching.num_nearest_neighbors 5 \
+  --FeatureMatching.use_gpu 1 \
+  --FeatureMatching.type ALIKED_LIGHTGLUE \
+  --TwoViewGeometry.min_num_inliers 30 \
+  --AlikedMatching.lightglue_model_path "/NERFSTUDIO/weights/aliked-lightglue.onnx"
 
 echo "Calibrating database..."
 cp $DN/colmap/database.db $DN/colmap/database_calibrated.db

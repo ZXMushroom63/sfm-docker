@@ -94,10 +94,15 @@ RUN git clone --recurse-submodules https://github.com/ceres-solver/ceres-solver.
     make install && \
     rm -rf /tmp/ceres-src
 
+RUN wget https://github.com/microsoft/onnxruntime/releases/download/v1.18.1/onnxruntime-linux-x64-gpu-1.18.1.tgz -O /tmp/onnx.tgz \
+    && tar -zxvf /tmp/onnx.tgz -C /opt/ \
+    && mv /opt/onnxruntime-* /opt/onnx \
+    && rm /tmp/onnx.tgz
+
 RUN git clone --depth=1 https://github.com/colmap/colmap.git /tmp/colmap-src && \
     cd /tmp/colmap-src && \
     # checkout latest tagged release. change to 'main' to checkout the latest arch
-    git checkout $(git describe --tags $(git rev-list --tags --max-count=1)) && \
+    # git checkout $(git describe --tags $(git rev-list --tags --max-count=1)) && \
     mkdir build && cd build && \
     export QT_QPA_PLATFORM=offscreen && \
     cmake .. \
@@ -109,6 +114,8 @@ RUN git clone --depth=1 https://github.com/colmap/colmap.git /tmp/colmap-src && 
       -DOPENGL_ENABLED=ON \
       -DTESTS_ENABLED=OFF \
       -DLIFT_WITH_CUDA=ON \
+      -DONNX_ENABLED=ON \
+      -DONNX_RUNTIME_PATH=/opt/onnx \
       -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++ \
       -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc \
       -DEigen3_DIR=/usr/lib/cmake/eigen3 \
@@ -168,6 +175,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends software-proper
     libgtest-dev \
     wget \
     curl \
+    ninja \
     mesa-utils \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
@@ -221,7 +229,7 @@ ENV CUDA_HOME=/usr/local/cuda
 RUN git clone --recurse-submodules https://github.com/nerfstudio-project/gsplat.git /tmp/gsplat && \
     cd /tmp/gsplat && \
     export CUDA_HOME=/usr/local/cuda && export PATH=$CUDA_HOME/bin:$PATH && export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH && \
-    FORCE_CMAKE=1 TORCH_CUDA_ARCH_LIST="$COMPUTE_VAR" MAX_JOBS=4 FORCE_CUDA=1 pip3 install --no-cache-dir --break-system-packages --no-build-isolation . && \
+    FORCE_CMAKE=1 TORCH_CUDA_ARCH_LIST="$COMPUTE_VAR" MAX_JOBS=4 NVCC_APPEND_FLAGS="--threads 4" FORCE_CUDA=1 pip3 install --no-cache-dir --break-system-packages --no-build-isolation . && \
     rm -rf /tmp/gsplat
 
 RUN git clone --depth=1 https://github.com/nerfstudio-project/nerfstudio.git /tmp/nerfstudio && \
@@ -365,6 +373,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     qt6-wayland \
     ca-certificates \
     unzip \
+    cudnn9-cuda-12 \
     && rm -rf /var/lib/apt/lists/*
 
 ENV TORCH_CUDA_ARCH_LIST=${COMPUTE_LEVEL}
@@ -375,6 +384,10 @@ ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 ENV TORCH_FORCE_WEIGHTS_ONLY_LOAD=0
 ENV TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1
+
+COPY --from=builder /opt/onnx /opt/onnx
+ENV LD_LIBRARY_PATH=/opt/onnx/lib:/usr/local/cuda/lib64:/usr/local/lib:${LD_LIBRARY_PATH}
+RUN echo "/opt/onnx/lib" > /etc/ld.so.conf.d/onnx.conf && ldconfig
 
 RUN wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/utils/panorama_sfm_patched.py && \
     chmod +x /usr/local/bin/panorama_sfm_patched.py && \
@@ -398,6 +411,8 @@ RUN wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-d
     wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/utils/zx_find_blurry.py && \
     chmod +x /usr/local/bin/zx_find_blurry.py && \
     wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/utils/zx_process_pix4d && \
-    chmod +x /usr/local/bin/zx_process_pix4d
+    chmod +x /usr/local/bin/zx_process_pix4d && \
+    wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/utils/zx_process_video_aliked && \
+    chmod +x /usr/local/bin/zx_process_video_aliked
 
 USER root

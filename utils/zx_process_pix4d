@@ -208,6 +208,7 @@ if EXPERIMENTAL_GLOMAP:
             pfile("colmap/sparse"),
             "--GlobalMapper.num_threads",
             "-1",
+            "--GlobalMapper.track_min_num_views_per_track", "6"
         ]
     )
 else:

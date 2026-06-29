@@ -2,10 +2,20 @@
 mkdir -p /NERFSTUDIO/weights
 cd /NERFSTUDIO/weights
 
-echo "Usage: $0 <small|medium|large>"
+echo "Usage: $0 <small|medium|large|onnx>"
 SZ=${1:-"small"}
 
-if [ "$SZ" = "large" ]; then
+if [ "$SZ" = "onnx" ]; then
+    echo "Downloading ONNX models and vocabtrees..."
+    sleep 1
+    wget https://github.com/colmap/colmap/releases/download/3.13.0/sift-lightglue.onnx
+    wget https://github.com/colmap/colmap/releases/download/3.13.0/bruteforce-matcher.onnx
+    wget https://github.com/colmap/colmap/releases/download/3.13.0/aliked-n32.onnx
+    wget https://github.com/colmap/colmap/releases/download/3.13.0/aliked-n16rot.onnx
+    wget https://github.com/colmap/colmap/releases/download/3.13.0/aliked-lightglue.onnx
+    wget https://github.com/colmap/colmap/releases/download/3.13.0/vocab_tree_faiss_flickr100K_words64K_aliked_n16rot.bin
+    wget https://github.com/colmap/colmap/releases/download/3.13.0/vocab_tree_faiss_flickr100K_words64K_aliked_n32.bin
+elif [ "$SZ" = "large" ]; then
     echo "Warning: the large vocab tree is 275MB! Proceeding in 3 seconds..."
     sleep 3
     wget https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_faiss_flickr100K_words32K.bin

@@ -18,11 +18,17 @@ fi
 mkdir -p $2
 P_1=$(realpath $1)
 P_2=$(realpath $2)
-shift 3
+
+if [ -z "$3" ]; then
+  shift 2
+else
+  shift 3
+fi
+
 ns-train splatfacto --output-dir $(realpath $P_2) \
     --pipeline.model.use_bilateral_grid True \
     --pipeline.model.sh-degree 2 \
     --pipeline.model.use-scale-regularization True \
     $DSFLAG "$@" \
-    --data $(realpath $P_1) colmap \
+    --data $(realpath $P_1) colmap --orientation-method none --center-method poses \
         --downscale-factor $DOWNSCALE
