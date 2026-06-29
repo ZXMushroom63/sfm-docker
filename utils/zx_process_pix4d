@@ -8,8 +8,13 @@ import csv
 import subprocess
 import time
 import math
+from pathlib import Path
+from concurrent.futures import ProcessPoolExecutor
 
 EXPERIMENTAL_GLOMAP = False
+EXPERIMENTAL_ALIKED = False
+EXPERIMENTAL_NOBLUR = False
+EXPERIMENTAL_NOBLUR_THRESH = 21000
 
 
 def quietRun(args):
@@ -18,15 +23,24 @@ def quietRun(args):
 
 if len(sys.argv) < 3:
     print(
-        "Usage: zx_process_pix4d <path/to/pix4d_raw_exported.zip> <path/to/dest> [global]",
+        "Usage: zx_process_pix4d <path/to/pix4d_raw_exported.zip> <path/to/dest> [global,noblur=21000,aliked]\n",
         file=sys.stderr,
     )
     print(
-        "Example: zx_process_pix4d vid/simple_demo_pix4d.zip experiment/ global",
+        "Example: zx_process_pix4d vid/simple_demo_pix4d.zip experiment/ global\n"
+        + "Example: zx_process_pix4d vid/simple_demo_pix4d.zip experiment/ noblur=21000,global\n"
+        + "Example: zx_process_pix4d vid/simple_demo_pix4d.zip experiment/\n",
         file=sys.stderr,
     )
     print(
-        "Built for pix4Dcatch v1.30.0, using a no-account patch and not using RTK",
+        "Built for pix4Dcatch v1.30.0, using a no-account patch and not using RTK\n",
+        file=sys.stderr,
+    )
+    print(
+        "Extraflags: \n"
+        + "  global: Use GLOBAL_MAPPER mapping algorithm, which is much faster than POSE_MAPPER, but may be less accurate\n"
+        + "  noblur=900: Filter images by laplacian variance, to remove blurred images.\n"
+        + "  aliked: Use ALIKED_N16ROT for feature extraction and matching instead of SIFT, which does better on less-detailed surfaces. Requires 'zx_download_assets onnx' to run properly.\n",
         file=sys.stderr,
     )
     sys.exit(1)
@@ -35,9 +49,26 @@ if len(sys.argv) < 3:
 zip_path = str(pathlib.Path(sys.argv[1]).absolute())
 dest_path = str(pathlib.Path(sys.argv[2]).absolute())
 
-if len(sys.argv) > 3 and sys.argv[3].lower().strip() == "global":
-    print("USING EXPERIMENTAL GLOBAL MAPPER BACKEND")
-    EXPERIMENTAL_GLOMAP = True
+if len(sys.argv) > 3:
+    flags = sys.argv[3].lower().strip().split(",")
+    if "global" in flags:
+        EXPERIMENTAL_GLOMAP = True
+        print("Enabling GLOBAL_MAPPER mapper")
+    if "aliked" in flags:
+        EXPERIMENTAL_ALIKED = True  #unused for now
+        print("Enabling ALIKED_N16ROT features")
+    for flag in flags:
+        if flag.startswith("noblur"):
+            EXPERIMENTAL_NOBLUR = True
+            if flag.startswith("noblur="):
+                EXPERIMENTAL_NOBLUR_THRESH = int(flag.replace("noblur=", ""))
+                print(
+                    f"Enabling blur detection with custom threshold of lv={EXPERIMENTAL_NOBLUR_THRESH}"
+                )
+            else:
+                print(
+                    f"Enabling blur detection with default threshold of lv={EXPERIMENTAL_NOBLUR_THRESH}"
+                )
 
 
 def pfile(strPath):
@@ -46,8 +77,9 @@ def pfile(strPath):
 
 start_time = time.time()
 
-print("Extracting pix4d data...")
+print("Clearing previous directory...")
 quietRun(["rm", "-r", dest_path])
+print("Extracting pix4d data...")
 quietRun(["unzip", zip_path, "-d", dest_path])
 
 subdir = str(
@@ -62,7 +94,7 @@ with open(pfile("pixdata/projectMetadata.json"), "r") as f:
 
 if projectMeta["locationInformation"]["coordinateSystem"]["name"] != "WGS 84":
     print("Expected WGS 84 coordinate system!")
-    exit(1)
+    sys.exit(1)
 
 AR_positionData = {}
 xy_accuracy = 0
@@ -101,7 +133,45 @@ with open(pfile("pixdata/_gps/_all_locations.csv"), "r") as f:
         z_accuracy = max(z_accuracy, float(row[IDX_Z]))
 
 quietRun(["mkdir", "-p", pfile("images")])
+
+print("Copying frames...")
 quietRun(["sh", "-c", f"cp {pfile("pixdata/Image_*")} {pfile("images/")}"])
+
+
+def process_blur_batch(batch_paths, threshold):
+    if not batch_paths:
+        return []
+
+    cmd = ["zx_find_blurry.py", str(threshold)] + [str(p) for p in batch_paths]
+
+    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    return [line for line in result.stdout.replace(" ","\n").splitlines() if line.strip()]
+
+
+if EXPERIMENTAL_NOBLUR:
+    parallel = os.cpu_count() - 2
+    with ProcessPoolExecutor(max_workers=parallel) as executor:
+        root = pfile("images/")
+        images = [str(img) for img in Path(root).iterdir() if img.is_file()]
+        print(f"Scanning a total of {len(images)} frames for blurring with thresh={EXPERIMENTAL_NOBLUR_THRESH}")
+        arg_list = [[[], EXPERIMENTAL_NOBLUR_THRESH] for _ in range(parallel)]
+        allocator = 0
+        for path in images:
+            arg_list[allocator][0].append(path)
+            allocator = (allocator + 1) % parallel
+
+        futures = [executor.submit(process_blur_batch, *args) for args in arg_list]
+        results = [future.result() for future in futures]
+        blurry_count = 0
+        for result in results:
+            blurry_count += len(results)
+        print(f"Found that {int(blurry_count / len(images) * 100)}% frames were blurry ({blurry_count} frames)")
+        print("Purging blurry frames...")
+        flattenedList = []
+        for result in results:
+            for file in result:
+                flattenedList.append(file.strip())
+        quietRun(["rm"] + flattenedList)
 
 print("Preparing COLMAP workspace and spatial priors...")
 quietRun(["mkdir", "-p", pfile("colmap")])
@@ -112,28 +182,34 @@ images_dir = pfile("images")
 priors_file = pfile("colmap/spatial_priors.txt")
 
 first_img = list(AR_positionData.keys())[0]
-ref_lat = AR_positionData[first_img]['latitude']
-ref_lon = AR_positionData[first_img]['longitude']
-ref_alt = AR_positionData[first_img]['altitude']
+ref_lat = AR_positionData[first_img]["latitude"]
+ref_lon = AR_positionData[first_img]["longitude"]
+ref_alt = AR_positionData[first_img]["altitude"]
 
 R_a = 6378137.0
 
 with open(priors_file, "w") as pf:
     for img_name, data in AR_positionData.items():
-        
-        dlat = math.radians(data['latitude'] - ref_lat)
-        dlon = math.radians(data['longitude'] - ref_lon)
-        
+
+        dlat = math.radians(data["latitude"] - ref_lat)
+        dlon = math.radians(data["longitude"] - ref_lon)
+
         x = dlon * R_a * math.cos(math.radians(ref_lat))
         y = dlat * R_a
-        z = data['altitude'] - ref_alt
-        
-        pf.write(
-            f"{img_name} {x} {y} {z}\n"
-        )
+        z = data["altitude"] - ref_alt
+
+        pf.write(f"{img_name} {x} {y} {z}\n")
 
 time.sleep(3)
+
+extraExtractionFlags = []
+extraMatchingFlags = []
+if EXPERIMENTAL_ALIKED:
+    extraExtractionFlags += ["--FeatureExtraction.type", "ALIKED_N16ROT", "--AlikedExtraction.n16rot_model_path", "/NERFSTUDIO/weights/aliked-n16rot.onnx"]
+    extraMatchingFlags += ["--FeatureMatching.type", "ALIKED_LIGHTGLUE", "--AlikedMatching.lightglue_model_path", "/NERFSTUDIO/weights/aliked-lightglue.onnx"]
+
 print("Step 1: Extracting features...")
+
 subprocess.run(
     [
         "colmap",
@@ -154,7 +230,7 @@ subprocess.run(
         "8192",
         "--FeatureExtraction.num_threads",
         "-1",
-    ]
+    ] + extraExtractionFlags
 )
 
 print("Step 2a: Sequential matching...")
@@ -170,7 +246,7 @@ subprocess.run(
         "1",
         "--FeatureMatching.guided_matching",
         "1",
-    ]
+    ] + extraMatchingFlags
 )
 
 print("Step 2b: Spatial matching...")
@@ -183,12 +259,12 @@ subprocess.run(
         "--SpatialMatching.max_num_neighbors",
         "10",
         "--SpatialMatching.max_distance",
-        "5",  # radius limit (~5 meters)
+        "5",  #radius limit (5 meters)
         "--FeatureMatching.use_gpu",
         "1",
         "--FeatureMatching.guided_matching",
         "1",
-    ]
+    ] + extraMatchingFlags
 )
 
 if EXPERIMENTAL_GLOMAP:
@@ -208,7 +284,8 @@ if EXPERIMENTAL_GLOMAP:
             pfile("colmap/sparse"),
             "--GlobalMapper.num_threads",
             "-1",
-            "--GlobalMapper.track_min_num_views_per_track", "6"
+            "--GlobalMapper.track_min_num_views_per_track",
+            "6",
         ]
     )
 else:
@@ -232,7 +309,7 @@ else:
             "--Mapper.min_num_matches",
             "35",
             "--Mapper.max_reg_trials",
-            "1"
+            "1",
         ]
     )
 
@@ -282,5 +359,8 @@ print(f"Name: {projectMeta["name"]}")
 print(f"Trigger Method: {projectMeta["trigger"]["triggerType"]}")
 print(f"Distance Covered: {int(projectMeta["distanceTravelled"])}m")
 print(f"Frame Count: {projectMeta["initial_image_count"]} images")
+print(
+    f"Coordinate Space: {projectMeta["locationInformation"]["coordinateSystem"]["name"]}"
+)
 print("")
 print(f"Completed in {int(time.time() - start_time)}s")
