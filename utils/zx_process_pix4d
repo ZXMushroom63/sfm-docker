@@ -55,7 +55,7 @@ if len(sys.argv) > 3:
         EXPERIMENTAL_GLOMAP = True
         print("Enabling GLOBAL_MAPPER mapper")
     if "aliked" in flags:
-        EXPERIMENTAL_ALIKED = True  #unused for now
+        EXPERIMENTAL_ALIKED = True
         print("Enabling ALIKED_N16ROT features")
     for flag in flags:
         if flag.startswith("noblur"):
@@ -145,7 +145,9 @@ def process_blur_batch(batch_paths, threshold):
     cmd = ["zx_find_blurry.py", str(threshold)] + [str(p) for p in batch_paths]
 
     result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    return [line for line in result.stdout.replace(" ","\n").splitlines() if line.strip()]
+    return [
+        line for line in result.stdout.replace(" ", "\n").splitlines() if line.strip()
+    ]
 
 
 if EXPERIMENTAL_NOBLUR:
@@ -153,7 +155,9 @@ if EXPERIMENTAL_NOBLUR:
     with ProcessPoolExecutor(max_workers=parallel) as executor:
         root = pfile("images/")
         images = [str(img) for img in Path(root).iterdir() if img.is_file()]
-        print(f"Scanning a total of {len(images)} frames for blurring with thresh={EXPERIMENTAL_NOBLUR_THRESH}")
+        print(
+            f"Scanning a total of {len(images)} frames for blurring with thresh={EXPERIMENTAL_NOBLUR_THRESH}"
+        )
         arg_list = [[[], EXPERIMENTAL_NOBLUR_THRESH] for _ in range(parallel)]
         allocator = 0
         for path in images:
@@ -164,8 +168,10 @@ if EXPERIMENTAL_NOBLUR:
         results = [future.result() for future in futures]
         blurry_count = 0
         for result in results:
-            blurry_count += len(results)
-        print(f"Found that {int(blurry_count / len(images) * 100)}% frames were blurry ({blurry_count} frames)")
+            blurry_count += len(result)
+        print(
+            f"Found that {int(blurry_count / len(images) * 100)}% frames were blurry ({blurry_count} frames)"
+        )
         print("Purging blurry frames...")
         flattenedList = []
         for result in results:
@@ -197,16 +203,30 @@ with open(priors_file, "w") as pf:
         x = dlon * R_a * math.cos(math.radians(ref_lat))
         y = dlat * R_a
         z = data["altitude"] - ref_alt
+        
+        roll = data["roll"]
+        pitch = data["pitch"]
+        yaw = data["yaw"]
 
-        pf.write(f"{img_name} {x} {y} {z}\n")
+        pf.write(f"{img_name} {x} {y} {z} {roll} {pitch} {yaw}\n")
 
 time.sleep(3)
 
 extraExtractionFlags = []
-extraMatchingFlags = []
+extraMatchingFlags = ["--FeatureMatching.guided_matching", "1"]
 if EXPERIMENTAL_ALIKED:
-    extraExtractionFlags += ["--FeatureExtraction.type", "ALIKED_N16ROT", "--AlikedExtraction.n16rot_model_path", "/NERFSTUDIO/weights/aliked-n16rot.onnx"]
-    extraMatchingFlags += ["--FeatureMatching.type", "ALIKED_LIGHTGLUE", "--AlikedMatching.lightglue_model_path", "/NERFSTUDIO/weights/aliked-lightglue.onnx"]
+    extraExtractionFlags += [
+        "--FeatureExtraction.type",
+        "ALIKED_N16ROT",
+        "--AlikedExtraction.n16rot_model_path",
+        "/NERFSTUDIO/weights/aliked-n16rot.onnx",
+    ]
+    extraMatchingFlags = [
+        "--FeatureMatching.type",
+        "ALIKED_LIGHTGLUE",
+        "--AlikedMatching.lightglue_model_path",
+        "/NERFSTUDIO/weights/aliked-lightglue.onnx",
+    ]
 
 print("Step 1: Extracting features...")
 
@@ -230,7 +250,8 @@ subprocess.run(
         "8192",
         "--FeatureExtraction.num_threads",
         "-1",
-    ] + extraExtractionFlags
+    ]
+    + extraExtractionFlags
 )
 
 print("Step 2a: Sequential matching...")
@@ -244,9 +265,8 @@ subprocess.run(
         "15",
         "--FeatureMatching.use_gpu",
         "1",
-        "--FeatureMatching.guided_matching",
-        "1",
-    ] + extraMatchingFlags
+    ]
+    + extraMatchingFlags
 )
 
 print("Step 2b: Spatial matching...")
@@ -258,13 +278,13 @@ subprocess.run(
         db_path,
         "--SpatialMatching.max_num_neighbors",
         "10",
+        "--SpatialMatching.input_path", priors_file,
         "--SpatialMatching.max_distance",
-        "5",  #radius limit (5 meters)
+        "5",  # radius limit (5 meters)
         "--FeatureMatching.use_gpu",
         "1",
-        "--FeatureMatching.guided_matching",
-        "1",
-    ] + extraMatchingFlags
+    ]
+    + extraMatchingFlags
 )
 
 if EXPERIMENTAL_GLOMAP:
