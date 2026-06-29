@@ -175,7 +175,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends software-proper
     libgtest-dev \
     wget \
     curl \
-    ninja \
+    ninja-build \
     mesa-utils \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
