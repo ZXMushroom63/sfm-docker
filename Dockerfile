@@ -361,7 +361,7 @@ RUN echo "alias e='exit'" >> /root/.bashrc && \
     echo "export TORCH_FLASH_SDPA_ENABLED=1" >> /root/.bashrc && \
     echo "export TORCH_MEM_EFFICIENT_SDPA_ENABLED=1" >> /root/.bashrc && \
     echo "export TORCH_MATH_SDPA_ENABLED=1" >> /root/.bashrc && \
-    echo "export LD_LIBRARY_PATH=/opt/onnx/lib:/opt/cudnn9/lib:/usr/local/cuda/lib64:/usr/local/lib:$LD_LIBRARY_PATH" >> /root/.bashrc && \
+    echo "export LD_LIBRARY_PATH=/opt/onnx/lib:/opt/cudnn9/lib:/usr/local/cuda/lib64:/usr/local/lib:\$LD_LIBRARY_PATH" >> /root/.bashrc && \
     echo "cls; nvcc --version | grep 'Cuda compilation tools'; colmap --version; python3 -c \"import sys, torch; print(f\\\"Python: {sys.version.split()[0]} | PyTorch: {torch.__version__} | Backend: {'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'}\\\")\"; echo ''; echo 'Welcome to SfM-docker!'; echo ''; cd /NERFSTUDIO/" >> /root/.bashrc
     
 
