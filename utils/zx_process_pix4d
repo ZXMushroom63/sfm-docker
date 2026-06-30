@@ -14,7 +14,7 @@ from concurrent.futures import ProcessPoolExecutor
 EXPERIMENTAL_GLOMAP = False
 EXPERIMENTAL_ALIKED = False
 EXPERIMENTAL_NOBLUR = False
-EXPERIMENTAL_NOBLUR_THRESH = 21000
+EXPERIMENTAL_NOBLUR_THRESH = 18000
 
 
 def quietRun(args):
@@ -23,12 +23,12 @@ def quietRun(args):
 
 if len(sys.argv) < 3:
     print(
-        "Usage: zx_process_pix4d <path/to/pix4d_raw_exported.zip> <path/to/dest> [global,noblur=21000,aliked]\n",
+        "Usage: zx_process_pix4d <path/to/pix4d_raw_exported.zip> <path/to/dest> [global,noblur=18000,aliked]\n",
         file=sys.stderr,
     )
     print(
         "Example: zx_process_pix4d vid/simple_demo_pix4d.zip experiment/ global\n"
-        + "Example: zx_process_pix4d vid/simple_demo_pix4d.zip experiment/ noblur=21000,global\n"
+        + "Example: zx_process_pix4d vid/simple_demo_pix4d.zip experiment/ noblur=18000,global\n"
         + "Example: zx_process_pix4d vid/simple_demo_pix4d.zip experiment/\n",
         file=sys.stderr,
     )
@@ -169,9 +169,16 @@ if EXPERIMENTAL_NOBLUR:
         blurry_count = 0
         for result in results:
             blurry_count += len(result)
+        
         print(
             f"Found that {int(blurry_count / len(images) * 100)}% frames were blurry ({blurry_count} frames)"
         )
+        if (blurry_count >= len(images) / 2):
+            print("Walk slower, or change the blurriness threshold.")
+            time.sleep(1)
+        if (blurry_count >= len(images)):
+            print("Change the blurriness threshold!")
+            exit(1)
         print("Purging blurry frames...")
         flattenedList = []
         for result in results:
