@@ -278,7 +278,6 @@ subprocess.run(
         db_path,
         "--SpatialMatching.max_num_neighbors",
         "10",
-        "--SpatialMatching.input_path", priors_file,
         "--SpatialMatching.max_distance",
         "5",  # radius limit (5 meters)
         "--FeatureMatching.use_gpu",
