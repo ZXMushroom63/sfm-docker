@@ -3,6 +3,8 @@ if [ -z "$1" ] || [ -z "$2" ]; then
   echo "Example script to splat mapped frames using nerfstudio's splatfacto. I recommend not using these settings."
   echo "Usage: $0 <mapped data dir> <splat dir> [downscale_factor] [extra pipeline flags]"
   echo "";
+  echo "Set env var FORCE_SCALE to a number to force a specific model scale. eg: FORCE_SCALE=0.2"
+  echo "Set env var FORCE_MODEL to a number to force a specific model. eg: FORCE_MODEL=splatfacto-big"
   echo "Useful extra flags: "
   echo " --pipeline.model.cull-alpha-thresh 0.1"
   echo " --pipeline.model.strategy mcmc"
@@ -25,10 +27,22 @@ else
   shift 3
 fi
 
-ns-train splatfacto --output-dir $(realpath $P_2) \
+SCALING_FLAGS=""
+if [ ! -z "$FORCE_SCALE" ]; then
+  echo "Forcing import scale of: $FORCE_SCALE"
+  SCALING_FLAGS="--auto-scale-poses False --scale-factor $FORCE_SCALE"
+fi
+
+MODEL="splatfacto"
+if [ ! -z "$FORCE_MODEL" ]; then
+  MODEL="$FORCE_MODEL"
+fi
+echo "Using model: $MODEL"
+sleep 1
+ns-train $MODEL --output-dir $(realpath $P_2) \
     --pipeline.model.use_bilateral_grid True \
     --pipeline.model.sh-degree 2 \
     --pipeline.model.use-scale-regularization True \
     $DSFLAG "$@" \
-    --data $(realpath $P_1) colmap --orientation-method none --center-method poses \
+    --data $(realpath $P_1) colmap --orientation-method none --center-method poses $SCALING_FLAGS \
         --downscale-factor $DOWNSCALE
