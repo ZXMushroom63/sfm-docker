@@ -79,13 +79,18 @@ start_time = time.time()
 
 print("Clearing previous directory...")
 quietRun(["rm", "-r", dest_path])
+
+time.sleep(0.1)
+
 print("Extracting pix4d data...")
 quietRun(["unzip", zip_path, "-d", dest_path])
+
+time.sleep(1)
 
 subdir = str(
     [x for x in pathlib.Path(sys.argv[2]).absolute().iterdir() if x.is_dir()][0]
 )
-
+print(f"Using directory: {subdir}")
 quietRun(["mv", subdir, dest_path + "/pixdata"])
 
 projectMeta = None
