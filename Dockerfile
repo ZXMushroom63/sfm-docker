@@ -356,7 +356,7 @@ RUN echo "alias e='exit'" >> /root/.bashrc && \
     echo "export TRITON_CACHE_DIR=/root/.cache/triton" >> /root/.bashrc && \
     echo "export TORCHINDUCTOR_FX_GRAPH_CACHE=1" >> /root/.bashrc && \
     echo "export TORCHINDUCTOR_AUTOGRAD_CACHE=1" >> /root/.bashrc && \
-    echo "export TORCHINDUCTOR_MAX_AUTOTUNE=1" >> /root/.bashrc && \
+    echo "export TORCHINDUCTOR_MAX_AUTOTUNE=max" >> /root/.bashrc && \
     echo "export TORCH_CUDNN_SDPA_ENABLED=1" >> /root/.bashrc && \
     echo "export TORCH_FLASH_SDPA_ENABLED=1" >> /root/.bashrc && \
     echo "export TORCH_MEM_EFFICIENT_SDPA_ENABLED=1" >> /root/.bashrc && \
@@ -417,6 +417,8 @@ RUN wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-d
     wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/utils/zx_process_pix4d && \
     chmod +x /usr/local/bin/zx_process_pix4d && \
     wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/utils/zx_process_video_aliked && \
-    chmod +x /usr/local/bin/zx_process_video_aliked
+    chmod +x /usr/local/bin/zx_process_video_aliked && \
+    wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/utils/_pix4d_mksparse && \
+    chmod +x /usr/local/bin/_pix4d_mksparse
 
 USER root

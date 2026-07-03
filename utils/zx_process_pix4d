@@ -10,10 +10,14 @@ import time
 import math
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor
+import numpy as np
+from scipy.spatial.transform import Rotation as R
 
 EXPERIMENTAL_GLOMAP = False
 EXPERIMENTAL_ALIKED = False
 EXPERIMENTAL_NOBLUR = False
+EXPERIMENTAL_AR = False
+EXPERIMENTAL_AR_ITERS = 3
 EXPERIMENTAL_NOBLUR_THRESH = 18000
 
 
@@ -23,13 +27,14 @@ def quietRun(args):
 
 if len(sys.argv) < 3:
     print(
-        "Usage: zx_process_pix4d <path/to/pix4d_raw_exported.zip> <path/to/dest> [global,noblur=18000,aliked]\n",
+        "Usage: zx_process_pix4d <path/to/pix4d_raw_exported.zip> <path/to/dest> [global,noblur=18000,aliked,ar=3]\n",
         file=sys.stderr,
     )
     print(
         "Example: zx_process_pix4d vid/simple_demo_pix4d.zip experiment/ global\n"
         + "Example: zx_process_pix4d vid/simple_demo_pix4d.zip experiment/ noblur=18000,global\n"
         + "Example: zx_process_pix4d vid/simple_demo_pix4d.zip experiment/\n",
+        +"Example: zx_process_pix4d vid/simple_demo_pix4d.zip experiment/ ar=3,aliked,noblur\n",
         file=sys.stderr,
     )
     print(
@@ -40,7 +45,8 @@ if len(sys.argv) < 3:
         "Extraflags: \n"
         + "  global: Use GLOBAL_MAPPER mapping algorithm, which is much faster than POSE_MAPPER, but may be less accurate\n"
         + "  noblur=900: Filter images by laplacian variance, to remove blurred images.\n"
-        + "  aliked: Use ALIKED_N16ROT for feature extraction and matching instead of SIFT, which does better on less-detailed surfaces. Requires 'zx_download_assets onnx' to run properly.\n",
+        + "  aliked: Use ALIKED_N16ROT for feature extraction and matching instead of SIFT, which does better on less-detailed surfaces. Requires 'zx_download_assets onnx' to run properly.\n"
+        + "  ar: Skip the mapping stage entirely, and instead use AR positions and refine those. Value is equal to the number of adjustment and retriangulation iterations\n",
         file=sys.stderr,
     )
     sys.exit(1)
@@ -69,6 +75,11 @@ if len(sys.argv) > 3:
                 print(
                     f"Enabling blur detection with default threshold of lv={EXPERIMENTAL_NOBLUR_THRESH}"
                 )
+        if flag.startswith("ar"):
+            EXPERIMENTAL_AR = True
+            if flag.startswith("ar="):
+                EXPERIMENTAL_AR_ITERS = int(flag.replace("ar=", ""))
+            print(f"Using AR priors, with {EXPERIMENTAL_AR_ITERS} iterations")
 
 
 def pfile(strPath):
@@ -83,7 +94,7 @@ quietRun(["rm", "-r", dest_path])
 time.sleep(0.1)
 
 print("Extracting pix4d data...")
-quietRun(["unzip", zip_path, "-d", dest_path])
+quietRun(["unzip", zip_path, "-d", dest_path, "-x", "Confidence_*", "-x", "DepthMap_*"])
 
 time.sleep(1)
 
@@ -104,7 +115,24 @@ if projectMeta["locationInformation"]["coordinateSystem"]["name"] != "WGS 84":
 AR_positionData = {}
 xy_accuracy = 0
 z_accuracy = 0
-with open(pfile("pixdata/_gps/_all_locations.csv"), "r") as f:
+
+useCorrectedData = False
+
+with open(pfile("pixdata/_gps/_locations_gps_ar_corrected.csv"), "r") as f:
+    if len(f.readlines()) > 2:
+        useCorrectedData = True
+        print(
+            "Your capture contains error-corrected data, using that instead of raw AR"
+        )
+
+with open(
+    pfile(
+        "pixdata/_gps/_locations_gps_ar_corrected.csv"
+        if useCorrectedData
+        else "pixdata/_gps/_all_locations.csv"
+    ),
+    "r",
+) as f:  # pixdata/_gps/_all_locations.csv
     reader = csv.reader(f)
 
     header = next(reader)
@@ -119,9 +147,10 @@ with open(pfile("pixdata/_gps/_all_locations.csv"), "r") as f:
     IDX_XY = header.index("xyAccuracy")
     IDX_Z = header.index("zAccuracy")
 
-    marker = []
-    while not (len(marker) == 1 and marker[0].lower().endswith("ar")):
-        marker = next(reader)
+    if not useCorrectedData:
+        marker = []
+        while not (len(marker) == 1 and marker[0].lower().endswith("ar")):
+            marker = next(reader)
 
     for row in reader:
         if row[0].strip().startswith("//"):
@@ -133,6 +162,7 @@ with open(pfile("pixdata/_gps/_all_locations.csv"), "r") as f:
             "latitude": float(row[IDX_LAT]),
             "longitude": float(row[IDX_LON]),
             "altitude": float(row[IDX_ALT]),
+            "img": row[IDX_IMAGE],
         }
         xy_accuracy = max(xy_accuracy, float(row[IDX_XY]))
         z_accuracy = max(z_accuracy, float(row[IDX_Z]))
@@ -160,6 +190,7 @@ if EXPERIMENTAL_NOBLUR:
     with ProcessPoolExecutor(max_workers=parallel) as executor:
         root = pfile("images/")
         images = [str(img) for img in Path(root).iterdir() if img.is_file()]
+        images.sort()
         print(
             f"Scanning a total of {len(images)} frames for blurring with thresh={EXPERIMENTAL_NOBLUR_THRESH}"
         )
@@ -174,14 +205,14 @@ if EXPERIMENTAL_NOBLUR:
         blurry_count = 0
         for result in results:
             blurry_count += len(result)
-        
+
         print(
             f"Found that {int(blurry_count / len(images) * 100)}% frames were blurry ({blurry_count} frames)"
         )
-        if (blurry_count >= len(images) / 2):
+        if blurry_count >= len(images) / 2:
             print("Walk slower, or change the blurriness threshold.")
             time.sleep(1)
-        if (blurry_count >= len(images)):
+        if blurry_count >= len(images):
             print("Change the blurriness threshold!")
             exit(1)
         print("Purging blurry frames...")
@@ -189,11 +220,12 @@ if EXPERIMENTAL_NOBLUR:
         for result in results:
             for file in result:
                 flattenedList.append(file.strip())
+        flattenedList.sort()
         quietRun(["rm"] + flattenedList)
 
 print("Preparing COLMAP workspace and spatial priors...")
 quietRun(["mkdir", "-p", pfile("colmap")])
-quietRun(["mkdir", "-p", pfile("colmap/sparse")])
+quietRun(["mkdir", "-p", pfile("colmap/sparse/0")])
 
 db_path = pfile("colmap/database.db")
 images_dir = pfile("images")
@@ -205,22 +237,49 @@ ref_lon = AR_positionData[first_img]["longitude"]
 ref_alt = AR_positionData[first_img]["altitude"]
 
 R_a = 6378137.0
-
 with open(priors_file, "w") as pf:
     for img_name, data in AR_positionData.items():
-
         dlat = math.radians(data["latitude"] - ref_lat)
         dlon = math.radians(data["longitude"] - ref_lon)
-
         x = dlon * R_a * math.cos(math.radians(ref_lat))
         y = dlat * R_a
         z = data["altitude"] - ref_alt
-        
         roll = data["roll"]
         pitch = data["pitch"]
         yaw = data["yaw"]
-
         pf.write(f"{img_name} {x} {y} {z}\n")
+
+if EXPERIMENTAL_AR:
+    with open(pfile("colmap/sparse/0/images.txt"), "w") as img:
+        frame_index = 1
+        for img_name, data in AR_positionData.items():
+            if not Path(pfile("images/" + data["img"])).is_file():
+                continue
+            dlat = math.radians(data["latitude"] - ref_lat)
+            dlon = math.radians(data["longitude"] - ref_lon)
+            x = dlon * R_a * math.cos(math.radians(ref_lat))
+            y = dlat * R_a
+            z = data["altitude"] - ref_alt
+            camera_center = np.array([x, y, z], dtype=np.float64)
+            yaw = math.radians(data["yaw"])
+            pitch = math.radians(data["pitch"])
+            roll = math.radians(data["roll"])
+            r_yaw = R.from_rotvec([0, 0, -yaw])
+            r_pitch = R.from_rotvec([pitch, 0, 0])
+            r_roll = R.from_rotvec([0, roll, 0])
+            r_device_to_world = r_yaw * r_pitch * r_roll
+            R_body_to_colmap_cam = np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]])
+            r_body_to_colmap = R.from_matrix(R_body_to_colmap_cam)
+            r_colmap_cam_to_world = r_device_to_world * r_body_to_colmap
+            r_world_to_colmap = r_colmap_cam_to_world.inv()
+            R_mat = r_world_to_colmap.as_matrix()
+            tvec = -R_mat @ camera_center
+            q = r_world_to_colmap.as_quat()
+            qx, qy, qz, qw = q[0], q[1], q[2], q[3]
+            img.write(
+                f"{frame_index} {qw} {qx} {qy} {qz} {tvec[0]} {tvec[1]} {tvec[2]} 1 {img_name}\n\n"  # pfile('images/' + img_name)
+            )
+            frame_index += 1
 
 time.sleep(3)
 
@@ -256,8 +315,6 @@ subprocess.run(
         "OPENCV",
         "--FeatureExtraction.use_gpu",
         "1",
-        # "--SiftExtraction.estimate_affine_shape", "1",
-        # "--SiftExtraction.domain_size_pooling", "1",
         "--SiftExtraction.max_num_features",
         "8192",
         "--FeatureExtraction.num_threads",
@@ -298,7 +355,128 @@ subprocess.run(
     + extraMatchingFlags
 )
 
-if EXPERIMENTAL_GLOMAP:
+if EXPERIMENTAL_AR:
+    print("Step 3a: Generating initial sparse model from AR priors...")
+    with open(pfile("colmap/sparse/0/points3D.txt"), "w") as pf:
+        pf.write("")
+        pf.close()
+    with open(pfile("colmap/sparse/0/cameras.txt"), "w") as pf:
+        pf.write("")
+        pf.close()
+
+    print("Step 3b: Extracting camera intrinsics...")
+    subprocess.run(
+        [
+            "_pix4d_mksparse",
+            db_path,
+            pfile("colmap/sparse/0"),
+        ]
+    )
+    subprocess.run(
+        [
+            "colmap",
+            "model_converter",
+            "--input_path", pfile("colmap/sparse/0"),
+            "--output_path", pfile("colmap/sparse/0"),
+            "--output_type", "BIN"
+        ]
+    )
+    quietRun(["sh", "-c", f"rm {pfile("colmap/sparse/0/*.txt")}"])
+    
+
+    print("Step 3c: Triangulating points...")
+    quietRun(
+        [
+            "colmap",
+            "point_triangulator",
+            "--database_path",
+            db_path,
+            "--image_path",
+            images_dir,
+            "--input_path",
+            pfile("colmap/sparse/0"),
+            "--output_path",
+            pfile("colmap/sparse/0"),
+            "--Mapper.num_threads",
+            "-1",
+        ]
+    )
+
+    MAX_REPROJECTION_ERROR = 4.0
+
+    for loop in range(EXPERIMENTAL_AR_ITERS):
+        print(
+            f"Step 3di [{loop + 1}/{EXPERIMENTAL_AR_ITERS}]: Refining positions and rotations (Bundle Adjustment)..."
+        )
+        subprocess.run(
+            [
+                "colmap",
+                "bundle_adjuster",
+                "--input_path",
+                pfile("colmap/sparse/0"),
+                "--output_path",
+                pfile("colmap/sparse/0"),
+                "--BundleAdjustment.refine_focal_length",
+                "1",
+                "--BundleAdjustment.refine_principal_point",
+                "0",
+                "--BundleAdjustment.refine_extra_params",
+                "1",
+                "--BundleAdjustment.refine_rig_from_world",
+                "1",
+                "--BundleAdjustment.refine_sensor_from_rig",
+                "1",
+                "--BundleAdjustment.refine_points3D",
+                "1",
+                "--BundleAdjustmentCeres.max_num_iterations",
+                "200",
+                "--BundleAdjustmentCeres.use_gpu",
+                "1",
+                "--BundleAdjustment.min_track_length",
+                "3",
+            ]
+        )
+
+        if loop < EXPERIMENTAL_AR_ITERS - 1:
+            curr_max_error = f"{(4.0 / (loop + 1)):.2f}"
+            print(
+                f"Step 3dii [{loop + 1}/{EXPERIMENTAL_AR_ITERS}]: Filtering outlier points (max reproj error: {curr_max_error}px)..."
+            )
+            quietRun(
+                [
+                    "colmap",
+                    "point_filterer",
+                    "--input_path",
+                    pfile("colmap/sparse/0"),
+                    "--output_path",
+                    pfile("colmap/sparse/0"),
+                    "--Filterer.max_reproj_error",
+                    curr_max_error,
+                    "--Filterer.min_track_len",
+                    "3",
+                ]
+            )
+
+            print(
+                f"Step 3diii [{loop + 1}/{EXPERIMENTAL_AR_ITERS}]: Re-triangulating points with optimized poses..."
+            )
+            quietRun(
+                [
+                    "colmap",
+                    "point_triangulator",
+                    "--database_path",
+                    db_path,
+                    "--image_path",
+                    images_dir,
+                    "--input_path",
+                    pfile("colmap/sparse/0"),
+                    "--output_path",
+                    pfile("colmap/sparse/0"),
+                    "--Mapper.num_threads",
+                    "-1",
+                ]
+            )
+elif EXPERIMENTAL_GLOMAP:
     print("Step 3a: Calibrating view graph...")
     subprocess.run(["colmap", "view_graph_calibrator", "--database_path", db_path])
 
@@ -331,8 +509,6 @@ else:
             images_dir,
             "--output_path",
             pfile("colmap/sparse"),
-            "--ref_images_path",
-            priors_file,
             "--Mapper.num_threads",
             "-1",
             "--Mapper.filter_max_reproj_error",
