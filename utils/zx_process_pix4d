@@ -34,7 +34,7 @@ if len(sys.argv) < 3:
         "Example: zx_process_pix4d vid/simple_demo_pix4d.zip experiment/ global\n"
         + "Example: zx_process_pix4d vid/simple_demo_pix4d.zip experiment/ noblur=18000,global\n"
         + "Example: zx_process_pix4d vid/simple_demo_pix4d.zip experiment/\n"
-        + "Example: zx_process_pix4d vid/simple_demo_pix4d.zip experiment/ ar=3,aliked,noblur,ceres=300\n",
+        + "Example: zx_process_pix4d vid/simple_demo_pix4d.zip experiment/ ar=3,noblur,ceres=300\n",
         file=sys.stderr,
     )
     print(
@@ -46,7 +46,7 @@ if len(sys.argv) < 3:
         + "  global: Use GLOBAL_MAPPER mapping algorithm, which is much faster than POSE_MAPPER, but may be less accurate\n"
         + "  noblur=900: Filter images by laplacian variance, to remove blurred images.\n"
         + "  aliked: Use ALIKED_N16ROT for feature extraction and matching instead of SIFT, which does better on less-detailed surfaces. Requires 'zx_download_assets onnx' to run properly.\n"
-        + "  ar: Skip the mapping stage entirely, and instead use AR positions and refine those. Value is equal to the number of adjustment and retriangulation iterations. recommended to use in combination with raising the Ceres solver iteration cap.\n",
+        + "  ar: Skip the mapping stage entirely, and instead use AR positions and refine those. Value is equal to the number of adjustment and retriangulation iterations. recommended to use in combination with raising the Ceres solver iteration cap. Incompatible with ALIKED features, for some reason.\n",
         + "  ceres=200: Maximum number of solver iterations for the Ceres GPU solver\n",
         file=sys.stderr,
     )
@@ -85,6 +85,9 @@ if len(sys.argv) > 3:
             CERES_ITERATION_CAP = int(flag.replace("ceres=", ""))
             print(f"Setting Ceres solver iteration cap to {CERES_ITERATION_CAP}")
 
+if EXPERIMENTAL_AR and EXPERIMENTAL_ALIKED:
+    print("ALIKED features cannot be used with point_triangulator, and as such don't work on the AR pipeline!")
+    sys.exit(1)
 
 def pfile(strPath):
     return dest_path + "/" + strPath
@@ -243,6 +246,8 @@ ref_alt = AR_positionData[first_img]["altitude"]
 R_a = 6378137.0
 with open(priors_file, "w") as pf:
     for img_name, data in AR_positionData.items():
+        if not Path(pfile("images/" + data["img"])).is_file():
+            continue
         dlat = math.radians(data["latitude"] - ref_lat)
         dlon = math.radians(data["longitude"] - ref_lon)
         x = dlon * R_a * math.cos(math.radians(ref_lat))
@@ -403,6 +408,7 @@ if EXPERIMENTAL_AR:
             pfile("colmap/sparse/0"),
             "--Mapper.num_threads",
             "-1",
+            "--clear_points", "1"
         ]
     )
 

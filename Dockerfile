@@ -111,6 +111,7 @@ RUN git clone --depth=1 https://github.com/colmap/colmap.git /tmp/colmap-src && 
       -DCMAKE_CUDA_ARCHITECTURES="$(echo "${COMPUTE_LEVEL}" | sed 's/\.//g')" \
       -DGUI_ENABLED=ON \
       -DCUDA_ENABLED=ON \
+      -DCASPAR_ENABLED=ON \
       -DOPENGL_ENABLED=ON \
       -DTESTS_ENABLED=OFF \
       -DLIFT_WITH_CUDA=ON \
