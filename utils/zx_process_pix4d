@@ -33,8 +33,8 @@ if len(sys.argv) < 3:
     print(
         "Example: zx_process_pix4d vid/simple_demo_pix4d.zip experiment/ global\n"
         + "Example: zx_process_pix4d vid/simple_demo_pix4d.zip experiment/ noblur=18000,global\n"
-        + "Example: zx_process_pix4d vid/simple_demo_pix4d.zip experiment/\n",
-        +"Example: zx_process_pix4d vid/simple_demo_pix4d.zip experiment/ ar=3,aliked,noblur,ceres=300\n",
+        + "Example: zx_process_pix4d vid/simple_demo_pix4d.zip experiment/\n"
+        + "Example: zx_process_pix4d vid/simple_demo_pix4d.zip experiment/ ar=3,aliked,noblur,ceres=300\n",
         file=sys.stderr,
     )
     print(
