@@ -19,7 +19,7 @@ EXPERIMENTAL_NOBLUR = False
 EXPERIMENTAL_AR = False
 EXPERIMENTAL_AR_ITERS = 3
 EXPERIMENTAL_NOBLUR_THRESH = 18000
-CERES_ITERATION_CAP = 200
+SOLVER_ITERATION_CAP = 200
 
 def quietRun(args):
     subprocess.run(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -27,14 +27,14 @@ def quietRun(args):
 
 if len(sys.argv) < 3:
     print(
-        "Usage: zx_process_pix4d <path/to/pix4d_raw_exported.zip> <path/to/dest> [global,noblur=18000,aliked,ar=3,ceres=200]\n",
+        "Usage: zx_process_pix4d <path/to/pix4d_raw_exported.zip> <path/to/dest> [global,noblur=18000,aliked,ar=3,solver=200]\n",
         file=sys.stderr,
     )
     print(
         "Example: zx_process_pix4d vid/simple_demo_pix4d.zip experiment/ global\n"
         + "Example: zx_process_pix4d vid/simple_demo_pix4d.zip experiment/ noblur=18000,global\n"
         + "Example: zx_process_pix4d vid/simple_demo_pix4d.zip experiment/\n"
-        + "Example: zx_process_pix4d vid/simple_demo_pix4d.zip experiment/ ar=3,noblur,ceres=300\n",
+        + "Example: zx_process_pix4d vid/simple_demo_pix4d.zip experiment/ ar=3,noblur,solver=300\n",
         file=sys.stderr,
     )
     print(
@@ -47,7 +47,7 @@ if len(sys.argv) < 3:
         + "  noblur=900: Filter images by laplacian variance, to remove blurred images.\n"
         + "  aliked: Use ALIKED_N16ROT for feature extraction and matching instead of SIFT, which does better on less-detailed surfaces. Requires 'zx_download_assets onnx' to run properly.\n"
         + "  ar: Skip the mapping stage entirely, and instead use AR positions and refine those. Value is equal to the number of adjustment and retriangulation iterations. recommended to use in combination with raising the Ceres solver iteration cap. Incompatible with ALIKED features, for some reason.\n",
-        + "  ceres=200: Maximum number of solver iterations for the Ceres GPU solver\n",
+        + "  solver=200: Maximum number of solver iterations for the Ceres / Caspar GPU solvers\n",
         file=sys.stderr,
     )
     sys.exit(1)
@@ -81,9 +81,9 @@ if len(sys.argv) > 3:
             if flag.startswith("ar="):
                 EXPERIMENTAL_AR_ITERS = int(flag.replace("ar=", ""))
             print(f"Using AR priors, with {EXPERIMENTAL_AR_ITERS} iterations")
-        if flag.startswith("ceres="):
-            CERES_ITERATION_CAP = int(flag.replace("ceres=", ""))
-            print(f"Setting Ceres solver iteration cap to {CERES_ITERATION_CAP}")
+        if flag.startswith("solver="):
+            SOLVER_ITERATION_CAP = int(flag.replace("solver=", ""))
+            print(f"Setting Ceres solver iteration cap to {SOLVER_ITERATION_CAP}")
 
 if EXPERIMENTAL_AR and EXPERIMENTAL_ALIKED:
     print("ALIKED features cannot be used with point_triangulator, and as such don't work on the AR pipeline!")
@@ -101,7 +101,7 @@ quietRun(["rm", "-r", dest_path])
 time.sleep(0.1)
 
 print("Extracting pix4d data...")
-quietRun(["unzip", zip_path, "-d", dest_path, "-x", "Confidence_*", "-x", "DepthMap_*"])
+quietRun(["unzip", zip_path, "-d", dest_path, "-x", "*Confidence_*", "-x", "*DepthMap_*"])
 
 time.sleep(1)
 
@@ -176,8 +176,8 @@ with open(
 
 quietRun(["mkdir", "-p", pfile("images")])
 
-print("Copying frames...")
-quietRun(["sh", "-c", f"cp {pfile("pixdata/Image_*")} {pfile("images/")}"])
+print("Moving frames...")
+quietRun(["sh", "-c", f"mv {pfile("pixdata/Image_*")} {pfile("images/")}"])
 
 
 def process_blur_batch(batch_paths, threshold):
@@ -439,7 +439,8 @@ if EXPERIMENTAL_AR:
                 "--BundleAdjustment.refine_points3D",
                 "1",
                 "--BundleAdjustmentCeres.max_num_iterations",
-                str(CERES_ITERATION_CAP),
+                str(SOLVER_ITERATION_CAP),
+                "--BundleAdjustmentCaspar.solver_iter_max", str(SOLVER_ITERATION_CAP),
                 "--BundleAdjustmentCeres.use_gpu",
                 "1",
                 "--BundleAdjustment.min_track_length",
@@ -484,6 +485,7 @@ if EXPERIMENTAL_AR:
                     pfile("colmap/sparse/0"),
                     "--Mapper.num_threads",
                     "-1",
+                    "--Mapper.ba_use_gpu", "1"
                 ]
             )
 elif EXPERIMENTAL_GLOMAP:
@@ -505,7 +507,7 @@ elif EXPERIMENTAL_GLOMAP:
             "-1",
             "--GlobalMapper.track_min_num_views_per_track",
             "6",
-            "--GlobalMapper.ba_ceres_max_num_iterations", str(CERES_ITERATION_CAP)
+            "--GlobalMapper.ba_ceres_max_num_iterations", str(SOLVER_ITERATION_CAP)
         ]
     )
 else:
