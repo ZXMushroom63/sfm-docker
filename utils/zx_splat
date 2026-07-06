@@ -17,9 +17,21 @@ if [ "$DOWNSCALE" != "1" ]; then
   DSFLAG=""
 fi
 
-mkdir -p $2
-P_1=$(realpath $1)
-P_2=$(realpath $2)
+
+rm -rf /fast/*
+mkdir -p /fast
+
+echo "Copying dataset..."
+cp -r $(realpath $1) /fast/dataset
+
+P_1=/fast/dataset
+mkdir -p $P_1
+
+echo "Copying destination..."
+cp -r $(realpath $2) /fast/splatdest
+
+P_2=/fast/splatdest
+mkdir -p $P_2
 
 if [ -z "$3" ]; then
   shift 2
@@ -46,3 +58,11 @@ ns-train $MODEL --output-dir $(realpath $P_2) \
     $DSFLAG "$@" \
     --data $(realpath $P_1) colmap --orientation-method none --center-method poses $SCALING_FLAGS \
         --downscale-factor $DOWNSCALE
+
+echo "Shifting back to regular filesystem..."
+rm -r $(realpath $1)
+mv /fast/dataset $(realpath $1)
+rm -r $(realpath $2)
+mv /fast/splatdest $(realpath $2) 
+
+echo "Done!"

@@ -22,15 +22,18 @@ if [ "$1" = "--extraflags" ]; then
   exit 1
 fi
 
+rm -rf /fast/*
+mkdir -p /fast
+
 FN=$(realpath $1)
-DN=$(realpath $2)
+TRUE_DN=$(realpath $2)
+DN=/fast/$TRUE_DN
 NFRAMES=${3:-2}
 BONUSFLAGS=${4:-""}
 
-if [ -d "$DN/three-sixty" ]; then
-    rm -r "$DN"
+if [ -d "$TRUE_DN" ]; then
+    rm -r "$TRUE_DN"
 fi
-
 
 export QT_QPA_PLATFORM=offscreen
 
@@ -84,4 +87,6 @@ fi
 rm $DN/preframes/*
 echo "Individual frames removed to save storage space." > $DN/preframes/NOTICE.txt
 
+echo "Shifting back to regular filesystem..."
+mv $DN $TRUE_DN
 echo "Outputs are saved in subdirectory 'three-sixty'"

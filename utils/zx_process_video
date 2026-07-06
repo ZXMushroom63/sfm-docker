@@ -6,8 +6,15 @@ if [ -z "$1" ] || [ -z "$2" ]; then
   exit 1
 fi
 
+rm -rf /fast/*
+mkdir -p /fast
+
 FN=$(realpath $1)
-DN=$(realpath $2)
+TRUE_DN=$(realpath $2)
+if [ -d "$TRUE_DN" ]; then
+    rm -r "$TRUE_DN"
+fi
+DN=/fast/$TRUE_DN
 MINIMUM_SHARPNESS=${3:-1000}
 shift 3
 export QT_QPA_PLATFORM=offscreen
@@ -92,6 +99,8 @@ colmap global_mapper \
 
 DURATION=$(( ( $(date +%s) - $START_TIME ) / 60 ))
 
+echo "Shifting back to regular filesystem..."
+mv $DN $TRUE_DN
 echo Done in $DURATION minutes!
 
 exit 0

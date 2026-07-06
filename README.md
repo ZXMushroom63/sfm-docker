@@ -9,6 +9,9 @@ Once build, I'd recommend using `LAUNCH_CLI.bat` / `launch_cli.sh` to start Dock
 - Maps `~/sfm-docker` to `/NERFSTUDIO`
 - Maps `~/sfm-docker/.cache` to `/NERFSTUDIO/.cache`
 
+Note:
+I'd highly recommend running tracking and splatting in the `/accel` directory, to avoid disk overhead (can hit 2x performance in some cases). Just move them back into `/NERFSTUDIO/` before exiting the container, to not wipe your data. My wrapper scripts (`zx_process_*`, `zx_splat`) automatically handle this for you.
+
 Contains:
 - Latest stable release of Ceres Solver (including GPU acceleration with cuDSS)
 - Latest stable release of COLMAP with GPU acceleration and GLOMAP

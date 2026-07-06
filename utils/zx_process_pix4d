@@ -48,16 +48,28 @@ if len(sys.argv) < 3:
         + "  global: Use GLOBAL_MAPPER mapping algorithm, which is much faster than POSE_MAPPER, but may be less accurate\n"
         + "  noblur=18000: Filter images by laplacian variance, to remove blurred images.\n"
         + "  aliked: Use ALIKED_N16ROT for feature extraction and matching instead of SIFT, which does better on less-detailed surfaces. Requires 'zx_download_assets onnx' to run properly.\n"
-        + "  ar=3: Skip the mapping stage entirely, and instead use AR positions and refine those. Value is equal to the number of adjustment and retriangulation iterations. recommended to use in combination with raising the Ceres solver iteration cap. Incompatible with ALIKED features, for some reason.\n"
+        + "  ar=3: Skip the mapping stage entirely, and instead use AR positions and refine those. Value is equal to the number of adjustment and retriangulation iterations. recommended to use in combination with raising the Ceres/Caspar solver iteration cap. Incompatible with ALIKED features, for some reason.\n"
         + "  solver=200: Maximum number of solver iterations for the Ceres / Caspar GPU solvers\n"
         + "  caspar: Use Capsar solver instead of Ceres, for full GPU acceleration.\n",
         file=sys.stderr,
     )
     sys.exit(1)
 
-
 zip_path = str(pathlib.Path(sys.argv[1]).absolute())
-dest_path = str(pathlib.Path(sys.argv[2]).absolute())
+if not pathlib.Path(sys.argv[1]).is_file():
+    print(f"Bad zip path: {zip_path}")
+    sys.exit(1)
+
+quietRun(["rm", "-rf", "/fast/*"])
+quietRun(["mkdir", "-p", "/fast"])
+
+true_dest_path = str(pathlib.Path(sys.argv[2]).absolute())
+dest_path = "/fast" + str(pathlib.Path(sys.argv[2]).absolute())
+
+quietRun(["mkdir", "-p", dest_path])
+
+print(f"Using fast temp-dir: {dest_path}")
+print(f"Will finalise to: {true_dest_path}")
 
 if len(sys.argv) > 3:
     flags = sys.argv[3].lower().strip().split(",")
@@ -89,7 +101,7 @@ if len(sys.argv) > 3:
             print(f"Using AR priors, with {EXPERIMENTAL_AR_ITERS} iterations")
         if flag.startswith("solver="):
             SOLVER_ITERATION_CAP = int(flag.replace("solver=", ""))
-            print(f"Setting Ceres solver iteration cap to {SOLVER_ITERATION_CAP}")
+            print(f"Setting solver iteration cap to {SOLVER_ITERATION_CAP}")
 
 if EXPERIMENTAL_AR and EXPERIMENTAL_ALIKED:
     print(
@@ -105,7 +117,7 @@ def pfile(strPath):
 start_time = time.time()
 
 print("Clearing previous directory...")
-quietRun(["rm", "-r", dest_path])
+quietRun(["rm", "-r", true_dest_path])
 
 time.sleep(0.1)
 
@@ -117,7 +129,7 @@ quietRun(
 time.sleep(1)
 
 subdir = str(
-    [x for x in pathlib.Path(sys.argv[2]).absolute().iterdir() if x.is_dir()][0]
+    [x for x in pathlib.Path(dest_path).absolute().iterdir() if x.is_dir()][0]
 )
 print(f"Using directory: {subdir}")
 quietRun(["mv", subdir, dest_path + "/pixdata"])
@@ -607,6 +619,8 @@ subprocess.run(
     ]
 )
 
+print("Shifting back to regular filesystem...")
+quietRun(["mv", dest_path, true_dest_path])
 
 print("")
 print("[ PROJECT INFO ]")

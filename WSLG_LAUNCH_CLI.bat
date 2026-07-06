@@ -4,6 +4,7 @@ wsl docker run --gpus all -it --user root --rm ^
     -v "/mnt/c/Users/$(cmd.exe /c 'echo %USERNAME%' | tr -d '\r')/sfm-docker/.cache:/root/.cache" ^
     -v /tmp/.X11-unix:/tmp/.X11-unix ^
     -v /mnt/wslg:/mnt/wslg ^
+    -v /fast ^
     -v /usr/lib/wsl:/usr/lib/wsl ^
     -e LD_LIBRARY_PATH=/usr/lib/wsl/lib ^
     -e DISPLAY=$DISPLAY ^
