@@ -24,9 +24,13 @@ if __name__ == "__main__":
     path = ""
     if len(sys.argv) < 3:
         print("Usage: zx_find_blurry.py <min_sharpness> <paths/to/images.png>", file=sys.stderr)
+        print("If min sharpness is -1, will instead print the sharpness value of the first image passed to it.")
         sys.exit(1)
         
     min_sharp = int(sys.argv[1])
+    if (min_sharp == -1):
+        print(f"Sharpness of {sys.argv[2]} is {find_laplacian_variance(sys.argv[2])}")
+        sys.exit(0)
     blurry = []
     for path in sys.argv[2:]:
         variance = find_laplacian_variance(path)

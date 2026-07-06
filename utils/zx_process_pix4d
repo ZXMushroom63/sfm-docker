@@ -16,10 +16,12 @@ from scipy.spatial.transform import Rotation as R
 EXPERIMENTAL_GLOMAP = False
 EXPERIMENTAL_ALIKED = False
 EXPERIMENTAL_NOBLUR = False
+EXPERIMENTAL_SOLVER_BACKEND = "CERES"
 EXPERIMENTAL_AR = False
 EXPERIMENTAL_AR_ITERS = 3
 EXPERIMENTAL_NOBLUR_THRESH = 18000
 SOLVER_ITERATION_CAP = 200
+
 
 def quietRun(args):
     subprocess.run(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -44,10 +46,11 @@ if len(sys.argv) < 3:
     print(
         "Extraflags: \n"
         + "  global: Use GLOBAL_MAPPER mapping algorithm, which is much faster than POSE_MAPPER, but may be less accurate\n"
-        + "  noblur=900: Filter images by laplacian variance, to remove blurred images.\n"
+        + "  noblur=18000: Filter images by laplacian variance, to remove blurred images.\n"
         + "  aliked: Use ALIKED_N16ROT for feature extraction and matching instead of SIFT, which does better on less-detailed surfaces. Requires 'zx_download_assets onnx' to run properly.\n"
-        + "  ar: Skip the mapping stage entirely, and instead use AR positions and refine those. Value is equal to the number of adjustment and retriangulation iterations. recommended to use in combination with raising the Ceres solver iteration cap. Incompatible with ALIKED features, for some reason.\n",
-        + "  solver=200: Maximum number of solver iterations for the Ceres / Caspar GPU solvers\n",
+        + "  ar=3: Skip the mapping stage entirely, and instead use AR positions and refine those. Value is equal to the number of adjustment and retriangulation iterations. recommended to use in combination with raising the Ceres solver iteration cap. Incompatible with ALIKED features, for some reason.\n"
+        + "  solver=200: Maximum number of solver iterations for the Ceres / Caspar GPU solvers\n"
+        + "  caspar: Use Capsar solver instead of Ceres, for full GPU acceleration.\n",
         file=sys.stderr,
     )
     sys.exit(1)
@@ -64,6 +67,9 @@ if len(sys.argv) > 3:
     if "aliked" in flags:
         EXPERIMENTAL_ALIKED = True
         print("Enabling ALIKED_N16ROT features")
+    if "caspar" in flags:
+        EXPERIMENTAL_SOLVER_BACKEND = "CASPAR"
+        print("Switching to Caspar solver backend")
     for flag in flags:
         if flag.startswith("noblur"):
             EXPERIMENTAL_NOBLUR = True
@@ -86,8 +92,11 @@ if len(sys.argv) > 3:
             print(f"Setting Ceres solver iteration cap to {SOLVER_ITERATION_CAP}")
 
 if EXPERIMENTAL_AR and EXPERIMENTAL_ALIKED:
-    print("ALIKED features cannot be used with point_triangulator, and as such don't work on the AR pipeline!")
+    print(
+        "ALIKED features cannot be used with point_triangulator, and as such don't work on the AR pipeline!"
+    )
     sys.exit(1)
+
 
 def pfile(strPath):
     return dest_path + "/" + strPath
@@ -101,7 +110,9 @@ quietRun(["rm", "-r", dest_path])
 time.sleep(0.1)
 
 print("Extracting pix4d data...")
-quietRun(["unzip", zip_path, "-d", dest_path, "-x", "*Confidence_*", "-x", "*DepthMap_*"])
+quietRun(
+    ["unzip", zip_path, "-d", dest_path, "-x", "*Confidence_*", "-x", "*DepthMap_*"]
+)
 
 time.sleep(1)
 
@@ -222,6 +233,7 @@ if EXPERIMENTAL_NOBLUR:
         if blurry_count >= len(images):
             print("Change the blurriness threshold!")
             exit(1)
+        subprocess.run(["zx_find_blurry.py", "-1", images[0]])
         print("Purging blurry frames...")
         flattenedList = []
         for result in results:
@@ -321,7 +333,7 @@ subprocess.run(
         "--ImageReader.single_camera",
         "1",
         "--ImageReader.camera_model",
-        "OPENCV",
+        "OPENCV" if EXPERIMENTAL_SOLVER_BACKEND == "CERES" else "SIMPLE_RADIAL",
         "--FeatureExtraction.use_gpu",
         "1",
         "--SiftExtraction.max_num_features",
@@ -376,7 +388,7 @@ if EXPERIMENTAL_AR:
     print("Step 3b: Extracting camera intrinsics...")
     subprocess.run(
         [
-            "_pix4d_mksparse",
+            "/NERFSTUDIO/utils/_pix4d_mksparse",
             db_path,
             pfile("colmap/sparse/0"),
         ]
@@ -385,13 +397,15 @@ if EXPERIMENTAL_AR:
         [
             "colmap",
             "model_converter",
-            "--input_path", pfile("colmap/sparse/0"),
-            "--output_path", pfile("colmap/sparse/0"),
-            "--output_type", "BIN"
+            "--input_path",
+            pfile("colmap/sparse/0"),
+            "--output_path",
+            pfile("colmap/sparse/0"),
+            "--output_type",
+            "BIN",
         ]
     )
     subprocess.run(["sh", "-c", f"rm {pfile("colmap/sparse/0/*.txt")}"])
-    
 
     print("Step 3c: Triangulating points...")
     subprocess.run(
@@ -408,7 +422,14 @@ if EXPERIMENTAL_AR:
             pfile("colmap/sparse/0"),
             "--Mapper.num_threads",
             "-1",
-            "--clear_points", "1"
+            "--Mapper.ba_use_gpu",
+            "1",
+            "--Mapper.ba_local_backend",
+            EXPERIMENTAL_SOLVER_BACKEND,
+            "--Mapper.ba_global_backend",
+            EXPERIMENTAL_SOLVER_BACKEND,
+            "--clear_points",
+            "1",
         ]
     )
 
@@ -440,7 +461,9 @@ if EXPERIMENTAL_AR:
                 "1",
                 "--BundleAdjustmentCeres.max_num_iterations",
                 str(SOLVER_ITERATION_CAP),
-                "--BundleAdjustmentCaspar.solver_iter_max", str(SOLVER_ITERATION_CAP),
+                "--BundleAdjustmentCaspar.solver_iter_max",
+                str(SOLVER_ITERATION_CAP),
+                "--BundleAdjustment.backend", EXPERIMENTAL_SOLVER_BACKEND,
                 "--BundleAdjustmentCeres.use_gpu",
                 "1",
                 "--BundleAdjustment.min_track_length",
@@ -485,7 +508,12 @@ if EXPERIMENTAL_AR:
                     pfile("colmap/sparse/0"),
                     "--Mapper.num_threads",
                     "-1",
-                    "--Mapper.ba_use_gpu", "1"
+                    "--Mapper.ba_use_gpu",
+                    "1",
+                    "--Mapper.ba_local_backend",
+                    EXPERIMENTAL_SOLVER_BACKEND,
+                    "--Mapper.ba_global_backend",
+                    EXPERIMENTAL_SOLVER_BACKEND,
                 ]
             )
 elif EXPERIMENTAL_GLOMAP:
@@ -507,7 +535,14 @@ elif EXPERIMENTAL_GLOMAP:
             "-1",
             "--GlobalMapper.track_min_num_views_per_track",
             "6",
-            "--GlobalMapper.ba_ceres_max_num_iterations", str(SOLVER_ITERATION_CAP)
+            "--GlobalMapper.ba_ceres_use_gpu",
+            "1",
+            "--GlobalMapper.gp_use_gpu",
+            "1",
+            "--GlobalMapper.ba_backend",
+            EXPERIMENTAL_SOLVER_BACKEND,
+            "--GlobalMapper.ba_ceres_max_num_iterations",
+            str(SOLVER_ITERATION_CAP),
         ]
     )
 else:
