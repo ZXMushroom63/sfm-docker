@@ -337,7 +337,8 @@ RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed "cmak
     "packaging" \
     "fpsample" \
     "tensorly" \
-    "torchmetrics[image]>=1.0.1"
+    "torchmetrics[image]>=1.0.1" \
+    "nerfview"
 
 # RUN pip install --no-cache-dir --break-system-packages setuptools wheel scikit-build-core transformers accelerate safetensors huggingface_hub
 
@@ -420,6 +421,8 @@ RUN wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-d
     wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/utils/zx_process_video_aliked && \
     chmod +x /usr/local/bin/zx_process_video_aliked && \
     wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/utils/_pix4d_mksparse && \
-    chmod +x /usr/local/bin/_pix4d_mksparse
+    chmod +x /usr/local/bin/_pix4d_mksparse && \
+    wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/utils/zx_densify && \
+    chmod +x /usr/local/bin/zx_densify
 
 USER root

@@ -1,0 +1,49 @@
+#!/bin/sh
+if [ -z "$1" ]; then
+  echo "Script to turn a sparse model into a dense model."
+  echo "Usage: $0 <project dir>"
+  echo "";
+  exit 1
+fi
+
+rm -rf /fast/*
+mkdir -p /fast
+
+rm -rf $(realpath $1)/colmap/dense
+
+echo "Copying dataset..."
+cp -r $(realpath $1) /fast/project
+
+mkdir -p /fast/project/colmap/dense
+
+DN=/fast/project
+
+echo "Undistorting images for dense reconstruction..."
+colmap image_undistorter \
+  --image_path $DN/images \
+  --input_path $DN/colmap/sparse/0 \
+  --output_path $DN/colmap/dense \
+  --output_type COLMAP \
+  --max_image_size 1024
+
+echo "Running dense stereo matching (PatchMatchStereo)..."
+colmap patch_match_stereo \
+  --workspace_path $DN/colmap/dense \
+  --workspace_format COLMAP \
+  --PatchMatchStereo.geom_consistency 1 \
+  --PatchMatchStereo.window_step 2 \
+  --PatchMatchStereo.num_iterations 4
+
+echo "Fusing dense depth maps into a 3D point cloud..."
+colmap stereo_fusion \
+  --workspace_path $DN/colmap/dense \
+  --workspace_format COLMAP \
+  --input_type geometric \
+  --output_path $DN/colmap/dense/fused.ply \
+  --StereoFusion.min_num_matches 4 \
+  --StereoFusion.max_reproj_error 1
+
+echo "Shifting back to regular filesystem..."
+cp -r /fast/project/colmap/dense $(realpath $1)/colmap/dense
+
+echo "Done!"

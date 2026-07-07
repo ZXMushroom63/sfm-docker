@@ -23,8 +23,8 @@ EXPERIMENTAL_NOBLUR_THRESH = 18000
 SOLVER_ITERATION_CAP = 200
 
 
-def quietRun(args):
-    subprocess.run(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+def quietRun(args, check=False):
+    subprocess.run(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=check)
 
 
 if len(sys.argv) < 3:
@@ -60,7 +60,7 @@ if not pathlib.Path(sys.argv[1]).is_file():
     print(f"Bad zip path: {zip_path}")
     sys.exit(1)
 
-quietRun(["rm", "-rf", "/fast/*"])
+quietRun(["sh", "-c", "rm -rf /fast/*"])
 quietRun(["mkdir", "-p", "/fast"])
 
 true_dest_path = str(pathlib.Path(sys.argv[2]).absolute())
@@ -118,14 +118,17 @@ start_time = time.time()
 
 print("Clearing previous directory...")
 quietRun(["rm", "-r", true_dest_path])
+quietRun(["rm", "-r", dest_path])
 
 time.sleep(0.1)
 
 print("Extracting pix4d data...")
 quietRun(
-    ["unzip", zip_path, "-d", dest_path, "-x", "*Confidence_*", "-x", "*DepthMap_*"]
+    ["unzip", "-q", zip_path, "-d", dest_path, "-x", "*Confidence_*", "-x", "*DepthMap_*"]
 )
 
+time.sleep(1)
+os.sync()
 time.sleep(1)
 
 subdir = str(
