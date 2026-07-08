@@ -40,7 +40,6 @@ colmap stereo_fusion \
   --workspace_format COLMAP \
   --input_type geometric \
   --output_path $DN/colmap/dense/fused.ply \
-  --StereoFusion.min_num_matches 4 \
   --StereoFusion.max_reproj_error 1
 
 echo "Shifting back to regular filesystem..."
