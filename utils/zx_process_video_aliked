@@ -94,6 +94,7 @@ colmap global_mapper \
   --image_path $DN/images \
   --GlobalMapper.track_min_num_views_per_track 6 \
   --output_path $DN/colmap/sparse \
+  --GlobalMapper.gp_max_num_iterations 200 \
   --GlobalMapper.num_threads $(($(nproc) - 2))
 
 DURATION=$(( ( $(date +%s) - $START_TIME ) / 60 ))
