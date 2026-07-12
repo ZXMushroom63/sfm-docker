@@ -288,7 +288,7 @@ RUN mkdir -p /install/gluemap && git clone --recurse-submodules https://github.c
 #     cd /gluemap && \
 #     export Boost_INCLUDE_DIR=/usr/include && \
 #     pip3 install --no-cache-dir --break-system-packages -e . --config-settings=cmake.args="-DBoost_INCLUDE_DIR=/usr/include"
-
+RUN pip3 install --no-cache-dir "git+https://github.com/saliteta/NanoGS.git"
 RUN pip3 uninstall -y numpy numpy
 RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed "cmake>=3.15" "appdirs>=1.4" "numpy<2.0.0" \
     "av>=9.2.0" \

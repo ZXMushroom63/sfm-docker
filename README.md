@@ -14,13 +14,15 @@ I'd highly recommend running tracking and splatting in the `/accel` directory, t
 
 Contains:
 - Latest stable release of Ceres Solver (including GPU acceleration with cuDSS)
-- Latest stable release of COLMAP with GPU acceleration and GLOMAP
+- Latest stable release of COLMAP with GPU acceleration, GLOMAP, ONNX/ALIKED/LightGlue, and Caspar
 - Latest gsplat
 - Latest nerfstudio
+- Latest nanoGS
+- Latest gluemap beta
 - The splatfacto-w gaussian splat model
 - The GLUEMAP proof of concept (`gluemap_demo`)
 - A patched SfM script for 360 panorama with COLMAP, without the memory corruption issues!
-- A couple other utility scripts
+- A bunch of utility scripts
 
 System Requirements:
 - 20GB Storage (you can get away with less)
