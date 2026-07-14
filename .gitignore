@@ -2,6 +2,7 @@
 .cache
 experiment/
 experiment2/
+experiment_*/
 processed/
 out/
 splat/
@@ -11,3 +12,6 @@ models/*
 vid/
 checkpoints/*
 gluemap_checkpoints/*
+logs/
+logs/*
+logs_*
