@@ -1,5 +1,11 @@
 #!/usr/bin/python3
 
+# Extra features:
+# add vocab tree option (done)
+# add option to increase spatial matching radius (done)
+# skip extrinsic optimnizations in early iterations (done)
+# optional image filter pass (done)
+
 import sys
 import pathlib
 import os
@@ -16,9 +22,14 @@ from scipy.spatial.transform import Rotation as R
 EXPERIMENTAL_GLOMAP = False
 EXPERIMENTAL_ALIKED = False
 EXPERIMENTAL_NOBLUR = False
+EXPERIMENTAL_IMFILTER = False
+STAGE_VOCABTREE = False
+STAGE_VOCABTREE_DEPTH = 50
+STAGE_SPATIAL_RADIUS = 6
+AR_MAX_REPROJECTION_ERROR = 12.0
 EXPERIMENTAL_SOLVER_BACKEND = "CERES"
 EXPERIMENTAL_AR = False
-EXPERIMENTAL_AR_ITERS = 3
+EXPERIMENTAL_AR_ITERS = 4
 EXPERIMENTAL_NOBLUR_THRESH = 18000
 SOLVER_ITERATION_CAP = 200
 
@@ -31,14 +42,14 @@ def quietRun(args, check=False):
 
 if len(sys.argv) < 3:
     print(
-        "Usage: zx_process_pix4d <path/to/pix4d_raw_exported.zip> <path/to/dest> [global,noblur=18000,aliked,ar=3,solver=200]\n",
+        "Usage: zx_process_pix4d <path/to/pix4d_raw_exported.zip> <path/to/dest> [global,noblur=18000,aliked,ar=4,solver=200]\n",
         file=sys.stderr,
     )
     print(
         "Example: zx_process_pix4d vid/simple_demo_pix4d.zip experiment/ global\n"
         + "Example: zx_process_pix4d vid/simple_demo_pix4d.zip experiment/ noblur=18000,global\n"
         + "Example: zx_process_pix4d vid/simple_demo_pix4d.zip experiment/\n"
-        + "Example: zx_process_pix4d vid/simple_demo_pix4d.zip experiment/ ar=3,noblur,solver=300\n",
+        + "Example: zx_process_pix4d vid/simple_demo_pix4d.zip experiment/ ar=4,noblur,solver=300\n",
         file=sys.stderr,
     )
     print(
@@ -50,23 +61,26 @@ if len(sys.argv) < 3:
         + "  global: Use GLOBAL_MAPPER mapping algorithm, which is much faster than POSE_MAPPER, but may be less accurate\n"
         + "  noblur=18000: Filter images by laplacian variance, to remove blurred images.\n"
         + "  aliked: Use ALIKED_N16ROT for feature extraction and matching instead of SIFT, which does better on less-detailed surfaces. Requires 'zx_download_assets onnx' to run properly.\n"
-        + "  ar=3: Skip the mapping stage entirely, and instead use AR positions and refine those. Value is equal to the number of adjustment and retriangulation iterations. recommended to use in combination with raising the Ceres/Caspar solver iteration cap. Incompatible with ALIKED features, for some reason.\n"
+        + "  ar=4: Skip the mapping stage entirely, and instead use AR positions and refine those. Value is equal to the number of adjustment and retriangulation iterations. recommended to use in combination with raising the Ceres/Caspar solver iteration cap. Incompatible with ALIKED features, for some reason.\n"
         + "  solver=200: Maximum number of solver iterations for the Ceres / Caspar GPU solvers\n"
-        + "  caspar: Use Capsar solver instead of Ceres, for full GPU acceleration.\n",
+        + "  caspar: Use Capsar solver instead of Ceres, for full GPU acceleration.\n"
+        + "  vocab=50: Add a vocab tree matching stage, where the value is equal to the number of match candidates per image.\n"
+        + "  spatial=6: Use this flag to modify the radius of the spatial matching stage.\n"
+        + "  imfilter: (for AR pipeline) enable image filtering to remove bad cameras.\n",
         file=sys.stderr,
     )
     sys.exit(1)
 
-zip_path = str(pathlib.Path(sys.argv[1]).absolute())
-if not pathlib.Path(sys.argv[1]).is_file():
+zip_path = str(Path(sys.argv[1]).absolute())
+if not Path(sys.argv[1]).is_file():
     print(f"Bad zip path: {zip_path}")
     sys.exit(1)
 
 quietRun(["sh", "-c", "rm -rf /fast/*"])
 quietRun(["mkdir", "-p", "/fast"])
 
-true_dest_path = str(pathlib.Path(sys.argv[2]).absolute())
-dest_path = "/fast" + str(pathlib.Path(sys.argv[2]).absolute())
+true_dest_path = str(Path(sys.argv[2]).absolute())
+dest_path = "/fast" + str(Path(sys.argv[2]).absolute())
 
 quietRun(["rm", "-r", dest_path])
 
@@ -86,6 +100,9 @@ if len(sys.argv) > 3:
     if "caspar" in flags:
         EXPERIMENTAL_SOLVER_BACKEND = "CASPAR"
         print("Switching to Caspar solver backend")
+    if "imfilter" in flags:
+        EXPERIMENTAL_IMFILTER = True
+        print("ENabling image filtering for AR pipeline")
     for flag in flags:
         if flag.startswith("noblur"):
             EXPERIMENTAL_NOBLUR = True
@@ -103,16 +120,59 @@ if len(sys.argv) > 3:
             if flag.startswith("ar="):
                 EXPERIMENTAL_AR_ITERS = int(flag.replace("ar=", ""))
             print(f"Using AR priors, with {EXPERIMENTAL_AR_ITERS} iterations")
-            print(f"Note: if your position data is noisy, try switching from the experimental AR pipeline to GLOBAL")
+            print(
+                f"Note: if your position data is noisy, try switching from the experimental AR pipeline to GLOBAL"
+            )
+        if flag.startswith("vocab"):
+            STAGE_VOCABTREE = True
+            if flag.startswith("vocab="):
+                STAGE_VOCABTREE_DEPTH = int(flag.replace("vocab=", ""))
+            print(
+                f"Enabling vocab-tree stage, with {STAGE_VOCABTREE_DEPTH} match candidates per image."
+            )
         if flag.startswith("solver="):
             SOLVER_ITERATION_CAP = int(flag.replace("solver=", ""))
             print(f"Setting solver iteration cap to {SOLVER_ITERATION_CAP}")
+        if flag.startswith("spatial="):
+            STAGE_SPATIAL_RADIUS = int(flag.replace("spatial=", ""))
+            print(f"Setting spatial matching radius to {STAGE_SPATIAL_RADIUS}")
 
 if EXPERIMENTAL_AR and EXPERIMENTAL_ALIKED:
     print(
         "ALIKED features cannot be used with point_triangulator, and as such don't work on the AR pipeline!"
     )
     sys.exit(1)
+
+if EXPERIMENTAL_ALIKED:
+    if not Path("/NERFSTUDIO/weights/aliked-n16rot.onnx").is_file():
+        print(
+            "Error: Aliked N16ROT model weights not found. Run 'zx_download_assets onnx' to download them."
+        )
+        sys.exit(1)
+
+    if not Path("/NERFSTUDIO/weights/aliked-lightglue.onnx").is_file():
+        print(
+            "Error: Aliked LightGlue model weights not found. Run 'zx_download_assets onnx' to download them."
+        )
+        sys.exit(1)
+
+VOCAB_TREE_PATH = (
+    "/NERFSTUDIO/weights/vocab_tree_faiss_flickr100K_words64K_aliked_n16rot.bin"
+    if EXPERIMENTAL_ALIKED
+    else "/NERFSTUDIO/weights/vocab_tree_faiss_flickr100K_words256K.bin"
+)
+
+if STAGE_VOCABTREE:
+    if not Path(VOCAB_TREE_PATH).is_file():
+        if EXPERIMENTAL_ALIKED:
+            print(
+                "Error: Aliked vocab-trees not found. Run 'zx_download_assets onnx' to download them."
+            )
+        else:
+            print(
+                "Error: SIFT vocab-trees not found. Run 'zx_download_assets medium' to download them."
+            )
+        sys.exit(1)
 
 
 def pfile(strPath):
@@ -145,7 +205,7 @@ time.sleep(1)
 os.sync()
 time.sleep(1)
 
-subdir = str([x for x in pathlib.Path(dest_path).absolute().iterdir() if x.is_dir()][0])
+subdir = str([x for x in Path(dest_path).absolute().iterdir() if x.is_dir()][0])
 print(f"Using directory: {subdir}")
 quietRun(["mv", subdir, dest_path + "/pixdata"])
 
@@ -396,12 +456,35 @@ subprocess.run(
         "--SpatialMatching.max_num_neighbors",
         "20",
         "--SpatialMatching.max_distance",
-        "5",  # radius limit (5 meters)
+        str(STAGE_SPATIAL_RADIUS),  # radius limit (5 meters)
         "--FeatureMatching.use_gpu",
         "1",
     ]
     + extraMatchingFlags
 )
+
+if STAGE_VOCABTREE:
+    print("Step 2c: Vocab-tree matching...")
+    subprocess.run(
+        [
+            "colmap",
+            "vocab_tree_matcher",
+            "--database_path",
+            db_path,
+            "--FeatureMatching.num_threads",
+            "--VocabTreeMatching.vocab_tree_path",
+            VOCAB_TREE_PATH,
+            "--VocabTreeMatching.num_images",
+            str(STAGE_VOCABTREE_DEPTH),
+            "--VocabTreeMatching.num_nearest_neighbors",
+            "5",
+            "--FeatureMatching.use_gpu",
+            "1",
+            "--TwoViewGeometry.min_num_inliers",
+            "30",
+        ]
+        + extraMatchingFlags
+    )
 
 if EXPERIMENTAL_AR:
     print("Step 3a: Generating initial sparse model from AR priors...")
@@ -434,8 +517,6 @@ if EXPERIMENTAL_AR:
     )
     subprocess.run(["sh", "-c", f"rm {pfile("colmap/sparse/0/*.txt")}"])
 
-    MAX_REPROJECTION_ERROR = 12.0
-
     print("Step 3c: Triangulating points...")
     subprocess.run(
         [
@@ -460,9 +541,9 @@ if EXPERIMENTAL_AR:
             "--clear_points",
             "1",
             "--Mapper.tri_complete_max_reproj_error",
-            str(MAX_REPROJECTION_ERROR),
+            str(AR_MAX_REPROJECTION_ERROR),
             "--Mapper.tri_merge_max_reproj_error",
-            str(MAX_REPROJECTION_ERROR),
+            str(AR_MAX_REPROJECTION_ERROR),
         ]
     )
 
@@ -470,6 +551,7 @@ if EXPERIMENTAL_AR:
         print(
             f"Step 3di [{loop + 1}/{EXPERIMENTAL_AR_ITERS}]: Refining positions and rotations (Bundle Adjustment)..."
         )
+        late_stage_feature = "1" if loop > ((EXPERIMENTAL_AR_ITERS // 2) - 1) else "0"
         subprocess.run(
             [
                 "colmap",
@@ -479,11 +561,11 @@ if EXPERIMENTAL_AR:
                 "--output_path",
                 pfile("colmap/sparse/0"),
                 "--BundleAdjustment.refine_focal_length",
-                "1",
+                late_stage_feature,
                 "--BundleAdjustment.refine_principal_point",
                 "0",
                 "--BundleAdjustment.refine_extra_params",
-                "1",
+                late_stage_feature,
                 "--BundleAdjustment.refine_rig_from_world",
                 "1",
                 "--BundleAdjustment.refine_sensor_from_rig",
@@ -504,7 +586,7 @@ if EXPERIMENTAL_AR:
         )
 
         if loop < EXPERIMENTAL_AR_ITERS - 1:
-            curr_max_error = f"{(MAX_REPROJECTION_ERROR / (loop + 1)):.2f}"
+            curr_max_error = f"{(AR_MAX_REPROJECTION_ERROR / (loop + 1)):.2f}"
             print(
                 f"Step 3dii [{loop + 1}/{EXPERIMENTAL_AR_ITERS}]: Filtering outlier points (max reproj error: {curr_max_error}px)..."
             )
@@ -522,6 +604,27 @@ if EXPERIMENTAL_AR:
                     "3",
                 ]
             )
+            
+            if EXPERIMENTAL_IMFILTER:
+                print(
+                    f"Step 3dii-b [{loop + 1}/{EXPERIMENTAL_AR_ITERS}]: Filtering outlier images (max reproj error: {curr_max_error}px)..."
+                )
+                quietRun(
+                    [
+                        "colmap",
+                        "image_filterer",
+                        "--input_path",
+                        pfile("colmap/sparse/0"),
+                        "--output_path",
+                        pfile("colmap/sparse/0"),
+                        "--min_num_observations",
+                        "10",
+                        "--min_focal_length_ratio",
+                        "0.1",
+                        "--max_focal_length_ratio",
+                        "10.0",
+                    ]
+                )
 
             print(
                 f"Step 3diii [{loop + 1}/{EXPERIMENTAL_AR_ITERS}]: Re-triangulating points with optimized poses..."

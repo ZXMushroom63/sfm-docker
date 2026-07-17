@@ -1,5 +1,6 @@
+# TODO: move to UV and use global contraints instead of hacky pip fixes
 #COLMAP
-FROM nvidia/cuda:12.6.2-devel-ubuntu24.04 AS builder
+FROM nvidia/cuda:12.8.0-devel-ubuntu24.04 AS builder
 
 ARG COMPUTE_LEVEL=7.5
 ENV COMPUTE_VAR=${COMPUTE_LEVEL}
@@ -133,7 +134,7 @@ RUN git clone --depth=1 https://github.com/colmap/colmap.git /tmp/colmap-src && 
     rm -rf /tmp/colmap-src
 
 # RT
-FROM nvidia/cuda:12.6.2-devel-ubuntu24.04
+FROM nvidia/cuda:12.8.0-devel-ubuntu24.04
 
 USER root
 
@@ -220,18 +221,12 @@ RUN find /var/cudss-local-repo-ubuntu2204-0.5.0/ -name "libcudss0-cuda-12_*.deb"
 RUN pip3 install --no-cache-dir --break-system-packages \
     torch \
     torchvision \
-    --extra-index-url https://download.pytorch.org/whl/cu126 \
-    --index-url https://download.pytorch.org/whl/cu126
+    --extra-index-url https://download.pytorch.org/whl/cu128 \
+    --index-url https://download.pytorch.org/whl/cu128
 
 ENV PATH=/usr/local/cuda/bin:$PATH
 ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/lib:$LD_LIBRARY_PATH
 ENV CUDA_HOME=/usr/local/cuda
-
-RUN git clone --recurse-submodules https://github.com/nerfstudio-project/gsplat.git /tmp/gsplat && \
-    cd /tmp/gsplat && \
-    export CUDA_HOME=/usr/local/cuda && export PATH=$CUDA_HOME/bin:$PATH && export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH && \
-    FORCE_CMAKE=1 TORCH_CUDA_ARCH_LIST="$COMPUTE_VAR" MAX_JOBS=4 NVCC_APPEND_FLAGS="--threads 4" FORCE_CUDA=1 pip3 install --no-cache-dir --break-system-packages --no-build-isolation . && \
-    rm -rf /tmp/gsplat
 
 RUN git clone --depth=1 https://github.com/nerfstudio-project/nerfstudio.git /tmp/nerfstudio && \
     cd /tmp/nerfstudio && \
@@ -279,10 +274,9 @@ RUN mkdir -p /install/gluemap && git clone --recurse-submodules https://github.c
     /opt/gluemap-env/bin/pip install --no-cache-dir -e . \
     --config-settings=cmake.args="-DBoost_INCLUDE_DIR=/usr/include" \
     --config-settings=cmake.args="-DCeres_DIR=/usr/local/lib/cmake/Ceres" \
-    --extra-index-url https://download.pytorch.org/whl/cu126 && \
+    --extra-index-url https://download.pytorch.org/whl/cu128 && \
     cd /install/gluemap/thirdparty/doppelgangers-plusplus/dust3r/croco/models/curope && \
     /opt/gluemap-env/bin/python setup.py build_ext --inplace
-    
 
 # RUN mkdir -p /gluemap && git clone --depth=1 --recurse-submodules --shallow-submodules https://github.com/colmap/gluemap.git /gluemap && \
 #     cd /gluemap && \
@@ -290,7 +284,15 @@ RUN mkdir -p /install/gluemap && git clone --recurse-submodules https://github.c
 #     pip3 install --no-cache-dir --break-system-packages -e . --config-settings=cmake.args="-DBoost_INCLUDE_DIR=/usr/include"
 RUN pip3 install --no-cache-dir "git+https://github.com/saliteta/NanoGS.git"
 RUN pip3 uninstall -y numpy numpy
-RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed "cmake>=3.15" "appdirs>=1.4" "numpy<2.0.0" \
+
+RUN nvcc --version | grep 'Cuda compilation tools' && \
+    python3 -c "import sys, torch; print(f'Python: {sys.version.split()[0]} | PyTorch: {torch.__version__} | Backend: {\"cuda\" if torch.cuda.is_available() else \"mps\" if torch.backends.mps.is_available() else \"cpu\"}')"
+
+# shim!
+RUN find /usr/lib/python3/dist-packages -maxdepth 1 -type d ! -name "dist-packages" | \
+    while read -r dir; do touch "$dir/RECORD"; done
+
+RUN pip3 install --no-cache-dir --break-system-packages "cmake>=3.15" "appdirs>=1.4" "numpy<2.0.0" \
     "av>=9.2.0" \
     "comet_ml>=3.33.8" \
     "cryptography>=38" \
@@ -338,9 +340,19 @@ RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed "cmak
     "fpsample" \
     "tensorly" \
     "torchmetrics[image]>=1.0.1" \
-    "nerfview"
+    "nerfview" \
+    --extra-index-url https://download.pytorch.org/whl/cu128 \
+    torch torchvision
+
+    RUN nvcc --version | grep 'Cuda compilation tools' && \
+python3 -c "import sys, torch; print(f'Python: {sys.version.split()[0]} | PyTorch: {torch.__version__} | Backend: {\"cuda\" if torch.cuda.is_available() else \"mps\" if torch.backends.mps.is_available() else \"cpu\"}')"
 
 # RUN pip install --no-cache-dir --break-system-packages setuptools wheel scikit-build-core transformers accelerate safetensors huggingface_hub
+RUN git clone --recurse-submodules https://github.com/nerfstudio-project/gsplat.git /tmp/gsplat && \
+    cd /tmp/gsplat && \
+    export CUDA_HOME=/usr/local/cuda && export PATH=$CUDA_HOME/bin:$PATH && export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH && \
+    FORCE_CMAKE=1 TORCH_CUDA_ARCH_LIST="$COMPUTE_VAR" MAX_JOBS=4 NVCC_APPEND_FLAGS="--threads 4" FORCE_CUDA=1 pip3 install --no-cache-dir --break-system-packages --no-build-isolation . && \
+    rm -rf /tmp/gsplat
 
 RUN ns-install-cli && pip3 cache purge
 
