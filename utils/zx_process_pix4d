@@ -6,13 +6,30 @@
 # skip extrinsic optimnizations in early iterations (done)
 # optional image filter pass (done)
 
+import time
 import sys
+
+times = []
+recent_time = time.time()
+init_time = recent_time
+def profilerStage(stage):
+    global times
+    global recent_time
+    stage_time = time.time()
+    times.append({
+        "name": stage,
+        "time": stage_time - recent_time,
+        "stamp": stage_time
+    })
+    recent_time = stage_time
+    sys.stdout.flush()
+    sys.stderr.flush()
+
 import pathlib
 import os
 import json
 import csv
 import subprocess
-import time
 import math
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor
@@ -23,6 +40,7 @@ EXPERIMENTAL_GLOMAP = False
 EXPERIMENTAL_ALIKED = False
 EXPERIMENTAL_NOBLUR = False
 EXPERIMENTAL_IMFILTER = False
+EXPERIMENTAL_BETTERSIFT = False
 STAGE_VOCABTREE = False
 STAGE_VOCABTREE_DEPTH = 50
 STAGE_SPATIAL_RADIUS = 6
@@ -33,6 +51,7 @@ EXPERIMENTAL_AR_ITERS = 4
 EXPERIMENTAL_NOBLUR_THRESH = 18000
 SOLVER_ITERATION_CAP = 200
 
+profilerStage("Runtime Setup")
 
 def quietRun(args, check=False):
     subprocess.run(
@@ -66,7 +85,8 @@ if len(sys.argv) < 3:
         + "  caspar: Use Capsar solver instead of Ceres, for full GPU acceleration.\n"
         + "  vocab=50: Add a vocab tree matching stage, where the value is equal to the number of match candidates per image.\n"
         + "  spatial=6: Use this flag to modify the radius of the spatial matching stage.\n"
-        + "  imfilter: (for AR pipeline) enable image filtering to remove bad cameras.\n",
+        + "  imfilter: (for AR pipeline) enable image filtering to remove bad cameras.\n"
+        + "  bettersift: (for non-ALIKED pipelines) enables SIFT Affine Shape Estimation and Domain Size Pooling, improving accuracy. This makes feature extraction use the CPU instead, making it slower.\n",
         file=sys.stderr,
     )
     sys.exit(1)
@@ -102,7 +122,10 @@ if len(sys.argv) > 3:
         print("Switching to Caspar solver backend")
     if "imfilter" in flags:
         EXPERIMENTAL_IMFILTER = True
-        print("ENabling image filtering for AR pipeline")
+        print("Enabling image filtering for AR pipeline")
+    if "bettersift" in flags:
+        EXPERIMENTAL_BETTERSIFT = True
+        print("Enabling extended SIFT capabilities")
     for flag in flags:
         if flag.startswith("noblur"):
             EXPERIMENTAL_NOBLUR = True
@@ -137,9 +160,9 @@ if len(sys.argv) > 3:
             STAGE_SPATIAL_RADIUS = int(flag.replace("spatial=", ""))
             print(f"Setting spatial matching radius to {STAGE_SPATIAL_RADIUS}")
 
-if EXPERIMENTAL_AR and EXPERIMENTAL_ALIKED:
+if EXPERIMENTAL_AR and (EXPERIMENTAL_ALIKED or EXPERIMENTAL_BETTERSIFT):
     print(
-        "ALIKED features cannot be used with point_triangulator, and as such don't work on the AR pipeline!"
+        "ALIKED/BETTER SIFT features cannot be used with point_triangulator, and as such don't work on the AR pipeline!"
     )
     sys.exit(1)
 
@@ -184,6 +207,8 @@ start_time = time.time()
 print("Clearing previous directory...")
 quietRun(["rm", "-r", true_dest_path])
 
+profilerStage("Init")
+
 time.sleep(0.1)
 
 print("Extracting pix4d data...")
@@ -208,6 +233,8 @@ time.sleep(1)
 subdir = str([x for x in Path(dest_path).absolute().iterdir() if x.is_dir()][0])
 print(f"Using directory: {subdir}")
 quietRun(["mv", subdir, dest_path + "/pixdata"])
+
+profilerStage("Extraction")
 
 projectMeta = None
 with open(pfile("pixdata/projectMetadata.json"), "r") as f:
@@ -272,11 +299,14 @@ with open(
         xy_accuracy = max(xy_accuracy, float(row[IDX_XY]))
         z_accuracy = max(z_accuracy, float(row[IDX_Z]))
 
+profilerStage("Parsing")
+
 quietRun(["mkdir", "-p", pfile("images")])
 
 print("Moving frames...")
 quietRun(["sh", "-c", f"mv {pfile("pixdata/Image_*")} {pfile("images/")}"])
 
+profilerStage("Frame Copy")
 
 def process_blur_batch(batch_paths, threshold):
     if not batch_paths:
@@ -328,6 +358,7 @@ if EXPERIMENTAL_NOBLUR:
                 flattenedList.append(file.strip())
         flattenedList.sort()
         quietRun(["rm"] + flattenedList)
+    profilerStage("NoBlur")
 
 print("Preparing COLMAP workspace and spatial priors...")
 quietRun(["mkdir", "-p", pfile("colmap")])
@@ -389,6 +420,8 @@ if EXPERIMENTAL_AR:
             )
             frame_index += 1
 
+profilerStage("Creating Priors")
+
 time.sleep(3)
 
 extraExtractionFlags = []
@@ -405,6 +438,11 @@ if EXPERIMENTAL_ALIKED:
         "ALIKED_LIGHTGLUE",
         "--AlikedMatching.lightglue_model_path",
         "/NERFSTUDIO/weights/aliked-lightglue.onnx",
+    ]
+elif EXPERIMENTAL_BETTERSIFT:
+    extraExtractionFlags += [
+        "--SiftExtraction.estimate_affine_shape", "1",
+        "--SiftExtraction.domain_size_pooling", "1"
     ]
 
 print("Step 1: Extracting features...")
@@ -431,6 +469,8 @@ subprocess.run(
     + extraExtractionFlags
 )
 
+profilerStage("Feature Extraction")
+
 print("Step 2a: Sequential matching...")
 subprocess.run(
     [
@@ -445,6 +485,7 @@ subprocess.run(
     ]
     + extraMatchingFlags
 )
+profilerStage("Sequential Matching")
 
 print("Step 2b: Spatial matching...")
 subprocess.run(
@@ -462,6 +503,7 @@ subprocess.run(
     ]
     + extraMatchingFlags
 )
+profilerStage("Spatial Matching")
 
 if STAGE_VOCABTREE:
     print("Step 2c: Vocab-tree matching...")
@@ -471,7 +513,6 @@ if STAGE_VOCABTREE:
             "vocab_tree_matcher",
             "--database_path",
             db_path,
-            "--FeatureMatching.num_threads",
             "--VocabTreeMatching.vocab_tree_path",
             VOCAB_TREE_PATH,
             "--VocabTreeMatching.num_images",
@@ -485,6 +526,7 @@ if STAGE_VOCABTREE:
         ]
         + extraMatchingFlags
     )
+    profilerStage("VocabTree Matching")
 
 if EXPERIMENTAL_AR:
     print("Step 3a: Generating initial sparse model from AR priors...")
@@ -516,6 +558,7 @@ if EXPERIMENTAL_AR:
         ]
     )
     subprocess.run(["sh", "-c", f"rm {pfile("colmap/sparse/0/*.txt")}"])
+    profilerStage("AR Sparse Setup")
 
     print("Step 3c: Triangulating points...")
     subprocess.run(
@@ -546,6 +589,8 @@ if EXPERIMENTAL_AR:
             str(AR_MAX_REPROJECTION_ERROR),
         ]
     )
+    
+    profilerStage("AR Initial Triangulation")
 
     for loop in range(EXPERIMENTAL_AR_ITERS):
         print(
@@ -655,9 +700,11 @@ if EXPERIMENTAL_AR:
                     curr_max_error,
                 ]
             )
+        profilerStage(f"AR Iteration {loop+1}")
 elif EXPERIMENTAL_GLOMAP:
     print("Step 3a: Calibrating view graph...")
     subprocess.run(["colmap", "view_graph_calibrator", "--database_path", db_path])
+    profilerStage("View Graph Calibration")
 
     print("Step 3b: Global reconstruction...")
     subprocess.run(
@@ -684,6 +731,7 @@ elif EXPERIMENTAL_GLOMAP:
             str(SOLVER_ITERATION_CAP),
         ]
     )
+    profilerStage("Global Mapper")
 else:
     print("Step 3: Pose prior mapper...")
     subprocess.run(
@@ -712,6 +760,7 @@ else:
             "1",
         ]
     )
+    profilerStage("Pose Prior Mapper")
 
 print("Step 4a: Model alignment...")
 subprocess.run(
@@ -735,6 +784,7 @@ subprocess.run(
         "1.5",
     ]
 )
+profilerStage("Model Alignment")
 
 print("Step 4b: Model orientation alignment...")
 subprocess.run(
@@ -751,9 +801,11 @@ subprocess.run(
         "IMAGE-ORIENTATION",
     ]
 )
+profilerStage("Model Orientation Alignment")
 
 print("Shifting back to regular filesystem...")
 quietRun(["mv", dest_path, true_dest_path])
+profilerStage("Finalising")
 
 print("")
 print("[ PROJECT INFO ]")
@@ -765,4 +817,39 @@ print(
     f"Coordinate Space: {projectMeta["locationInformation"]["coordinateSystem"]["name"]}"
 )
 print("")
+print("[ RECONSTRUCTION INFO ]")
+if len(sys.argv) > 3:
+    print("Flags: ")
+    flags = sys.argv[3].lower().strip().split(",")
+    for flag in flags:
+        print(f"  > {flag}")
+else:
+    print("Flags: None")
+
+total_duration = times[-1]["stamp"] - init_time
+max_stage_name_len = max(len(t["name"]) for t in times)
+print("Profiler: ")
+for timed_stage in times:
+    stage_name = timed_stage["name"]
+    duration_secs = timed_stage["time"]
+    total_secs = round(duration_secs)
+    if total_secs == 0:
+        time_str = f"{duration_secs:.2f}s" if duration_secs > 0 else "0s"
+    else:
+        hours = total_secs // 3600
+        minutes = (total_secs % 3600) // 60
+        secs = total_secs % 60
+        
+        parts = []
+        if hours > 0: 
+            parts.append(f"{hours}h")
+        if minutes > 0: 
+            parts.append(f"{minutes}m")
+        if secs > 0: 
+            parts.append(f"{secs}s")
+        time_str = " ".join(parts)
+    pct = (duration_secs / total_duration) * 100
+    print(f"{stage_name:<{max_stage_name_len}} {time_str:<12} {pct:.1f}%")
+
+
 print(f"Completed in {int(time.time() - start_time)}s")
