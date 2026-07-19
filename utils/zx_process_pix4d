@@ -1,10 +1,6 @@
 #!/usr/bin/python3
 
-# Extra features:
-# add vocab tree option (done)
-# add option to increase spatial matching radius (done)
-# skip extrinsic optimnizations in early iterations (done)
-# optional image filter pass (done)
+# todo: add CUDA+GPU NLMeans denoising
 
 import time
 import sys
@@ -12,15 +8,13 @@ import sys
 times = []
 recent_time = time.time()
 init_time = recent_time
+
+
 def profilerStage(stage):
     global times
     global recent_time
     stage_time = time.time()
-    times.append({
-        "name": stage,
-        "time": stage_time - recent_time,
-        "stamp": stage_time
-    })
+    times.append({"name": stage, "time": stage_time - recent_time, "stamp": stage_time})
     recent_time = stage_time
     sys.stdout.flush()
     sys.stderr.flush()
@@ -35,6 +29,9 @@ from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor
 import numpy as np
 from scipy.spatial.transform import Rotation as R
+import piexif
+from tqdm import tqdm
+import cv2
 
 EXPERIMENTAL_GLOMAP = False
 EXPERIMENTAL_ALIKED = False
@@ -48,10 +45,13 @@ AR_MAX_REPROJECTION_ERROR = 12.0
 EXPERIMENTAL_SOLVER_BACKEND = "CERES"
 EXPERIMENTAL_AR = False
 EXPERIMENTAL_AR_ITERS = 4
+EXPERIMENTAL_DENOISE = False
+EXPERIMENTAL_DENOISE_STRENGTH = 10
 EXPERIMENTAL_NOBLUR_THRESH = 18000
 SOLVER_ITERATION_CAP = 200
 
 profilerStage("Runtime Setup")
+
 
 def quietRun(args, check=False):
     subprocess.run(
@@ -86,7 +86,8 @@ if len(sys.argv) < 3:
         + "  vocab=50: Add a vocab tree matching stage, where the value is equal to the number of match candidates per image.\n"
         + "  spatial=6: Use this flag to modify the radius of the spatial matching stage.\n"
         + "  imfilter: (for AR pipeline) enable image filtering to remove bad cameras.\n"
-        + "  bettersift: (for non-ALIKED pipelines) enables SIFT Affine Shape Estimation and Domain Size Pooling, improving accuracy. This makes feature extraction use the CPU instead, making it slower.\n",
+        + "  bettersift: (for non-ALIKED pipelines) enables SIFT Affine Shape Estimation and Domain Size Pooling, improving accuracy. This makes feature extraction use the CPU instead, making it slower.\n"
+        + "  denoise=10: Uses OpenCV2 Non-Local Means denoising, with a default denoising strength of 10\n",
         file=sys.stderr,
     )
     sys.exit(1)
@@ -145,6 +146,16 @@ if len(sys.argv) > 3:
             print(f"Using AR priors, with {EXPERIMENTAL_AR_ITERS} iterations")
             print(
                 f"Note: if your position data is noisy, try switching from the experimental AR pipeline to GLOBAL"
+            )
+        if flag.startswith("denoise"):
+            EXPERIMENTAL_DENOISE = True
+            if flag.startswith("denoise="):
+                EXPERIMENTAL_DENOISE_STRENGTH = int(flag.replace("denoise=", ""))
+            print(
+                f"Enabling NLMeans denoising, strength={EXPERIMENTAL_DENOISE_STRENGTH}"
+            )
+            print(
+                f"Note: Only use this when you have high ISO noise (eg: night dataset)"
             )
         if flag.startswith("vocab"):
             STAGE_VOCABTREE = True
@@ -287,14 +298,20 @@ with open(
     for row in reader:
         if row[0].strip().startswith("//"):
             break
-        AR_positionData[row[IDX_IMAGE]] = {
+        
+        img_name = row[IDX_IMAGE]
+        
+        if EXPERIMENTAL_DENOISE:
+            img_name = os.path.basename(img_name) + ".png"
+        
+        AR_positionData[img_name] = {
             "roll": float(row[IDX_ROLL]),
             "pitch": float(row[IDX_PITCH]),
             "yaw": float(row[IDX_YAW]),
             "latitude": float(row[IDX_LAT]),
             "longitude": float(row[IDX_LON]),
             "altitude": float(row[IDX_ALT]),
-            "img": row[IDX_IMAGE],
+            "img": img_name,
         }
         xy_accuracy = max(xy_accuracy, float(row[IDX_XY]))
         z_accuracy = max(z_accuracy, float(row[IDX_Z]))
@@ -307,6 +324,7 @@ print("Moving frames...")
 quietRun(["sh", "-c", f"mv {pfile("pixdata/Image_*")} {pfile("images/")}"])
 
 profilerStage("Frame Copy")
+
 
 def process_blur_batch(batch_paths, threshold):
     if not batch_paths:
@@ -359,6 +377,56 @@ if EXPERIMENTAL_NOBLUR:
         flattenedList.sort()
         quietRun(["rm"] + flattenedList)
     profilerStage("NoBlur")
+
+if EXPERIMENTAL_DENOISE:
+    quietRun(["mv", pfile("images/"), pfile("raw/")])
+
+    in_dir = pfile("raw/")
+    out_dir = pfile("images/")
+
+    os.makedirs(pfile("raw/"), exist_ok=True)
+    os.makedirs(pfile("images/"), exist_ok=True)
+
+    images = [
+        f for f in os.listdir(in_dir) if f.lower().endswith((".png", ".jpg", ".jpeg"))
+    ]
+    
+    print(f"Denoising {len(images)} images...")
+    from PIL import Image
+    for filename in tqdm(images, desc="Denoising Dataset"):
+        input_path = os.path.join(in_dir, filename)
+        base_name = os.path.splitext(filename)[0]
+        output_path = os.path.join(out_dir, f"{base_name}.png")
+        search_window = 21
+        block_size = 7
+        img = cv2.imread(input_path)
+        exif_bytes = None
+
+        try:
+            exif_dict = piexif.load(input_path)
+            if exif_dict:
+                exif_bytes = piexif.dump(exif_dict)
+        except Exception as e:
+            pass
+
+        denoised_img = cv2.fastNlMeansDenoisingColored(
+            src=img,
+            dst=None,
+            h=EXPERIMENTAL_DENOISE_STRENGTH,
+            hColor=EXPERIMENTAL_DENOISE_STRENGTH,
+            templateWindowSize=block_size,
+            searchWindowSize=search_window,
+        )
+
+        denoised_rgb = cv2.cvtColor(denoised_img, cv2.COLOR_BGR2RGB)
+        pil_img = Image.fromarray(denoised_rgb)
+
+        if exif_dict:
+            exif_bytes = piexif.dump(exif_dict)
+            pil_img.save(output_path, format="PNG", exif=exif_bytes)
+        else:
+            pil_img.save(output_path, format="PNG")
+    profilerStage("Denoising")
 
 print("Preparing COLMAP workspace and spatial priors...")
 quietRun(["mkdir", "-p", pfile("colmap")])
@@ -441,8 +509,10 @@ if EXPERIMENTAL_ALIKED:
     ]
 elif EXPERIMENTAL_BETTERSIFT:
     extraExtractionFlags += [
-        "--SiftExtraction.estimate_affine_shape", "1",
-        "--SiftExtraction.domain_size_pooling", "1"
+        "--SiftExtraction.estimate_affine_shape",
+        "1",
+        "--SiftExtraction.domain_size_pooling",
+        "1",
     ]
 
 print("Step 1: Extracting features...")
@@ -589,7 +659,7 @@ if EXPERIMENTAL_AR:
             str(AR_MAX_REPROJECTION_ERROR),
         ]
     )
-    
+
     profilerStage("AR Initial Triangulation")
 
     for loop in range(EXPERIMENTAL_AR_ITERS):
@@ -649,7 +719,7 @@ if EXPERIMENTAL_AR:
                     "3",
                 ]
             )
-            
+
             if EXPERIMENTAL_IMFILTER:
                 print(
                     f"Step 3dii-b [{loop + 1}/{EXPERIMENTAL_AR_ITERS}]: Filtering outlier images (max reproj error: {curr_max_error}px)..."
@@ -839,13 +909,13 @@ for timed_stage in times:
         hours = total_secs // 3600
         minutes = (total_secs % 3600) // 60
         secs = total_secs % 60
-        
+
         parts = []
-        if hours > 0: 
+        if hours > 0:
             parts.append(f"{hours}h")
-        if minutes > 0: 
+        if minutes > 0:
             parts.append(f"{minutes}m")
-        if secs > 0: 
+        if secs > 0:
             parts.append(f"{secs}s")
         time_str = " ".join(parts)
     pct = (duration_secs / total_duration) * 100

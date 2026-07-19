@@ -341,6 +341,7 @@ RUN pip3 install --no-cache-dir --break-system-packages "cmake>=3.15" "appdirs>=
     "tensorly" \
     "torchmetrics[image]>=1.0.1" \
     "nerfview" \
+    "piexif" \
     --extra-index-url https://download.pytorch.org/whl/cu128 \
     torch torchvision
 
