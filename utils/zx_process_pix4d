@@ -40,6 +40,7 @@ EXPERIMENTAL_BETTERSIFT = False
 STAGE_VOCABTREE = False
 STAGE_VOCABTREE_DEPTH = 50
 STAGE_SPATIAL_RADIUS = 6
+STAGE_DOWNSCALE = -1
 AR_MAX_REPROJECTION_ERROR = 12.0
 EXPERIMENTAL_SOLVER_BACKEND = "CERES"
 EXPERIMENTAL_AR = False
@@ -88,6 +89,7 @@ if len(sys.argv) < 3:
         + "  imfilter: (for AR pipeline) enable image filtering to remove bad cameras.\n"
         + "  bettersift: (for non-ALIKED pipelines) enables SIFT Affine Shape Estimation and Domain Size Pooling, improving accuracy. This makes feature extraction use the CPU instead, making it slower.\n"
         + "  denoise=10: Uses OpenCV2 Non-Local Means denoising, with a default denoising strength of 10\n"
+        + "  downscale=720: Downscales (area average) to the specified pixel height, after any denoising stages. Recommended to set to 540 or lower for GLUEMAP\n"
         + "  glue: Uses the highly experimental GLUEMAP backend for feedforward 3D processing. Expect crashes.",
         file=sys.stderr,
     )
@@ -160,6 +162,16 @@ if len(sys.argv) > 3:
             )
             print(
                 f"Note: Only use this when you have high ISO noise (eg: night dataset)"
+            )
+        if flag.startswith("downscale"):
+            STAGE_DOWNSCALE = 720
+            if flag.startswith("downscale="):
+                STAGE_DOWNSCALE = int(flag.replace("downscale=", ""))
+            print(
+                f"Enabling downscaling to {STAGE_DOWNSCALE}p"
+            )
+            print(
+                f"Note: Will not affect images used in Nerfstudio!"
             )
         if flag.startswith("vocab"):
             STAGE_VOCABTREE = True
@@ -322,10 +334,12 @@ with open(
 
 profilerStage("Parsing")
 
-quietRun(["mkdir", "-p", pfile("images")])
+images_dir = pfile("images/")
+
+quietRun(["mkdir", "-p", images_dir])
 
 print("Moving frames...")
-quietRun(["sh", "-c", f"mv {pfile("pixdata/Image_*")} {pfile("images/")}"])
+quietRun(["sh", "-c", f"mv {pfile("pixdata/Image_*")} {images_dir}"])
 
 profilerStage("Frame Copy")
 
@@ -345,7 +359,7 @@ def process_blur_batch(batch_paths, threshold):
 if EXPERIMENTAL_NOBLUR:
     parallel = os.cpu_count() - 2
     with ProcessPoolExecutor(max_workers=parallel) as executor:
-        root = pfile("images/")
+        root = images_dir
         images = [str(img) for img in Path(root).iterdir() if img.is_file()]
         images.sort()
         print(
@@ -382,15 +396,13 @@ if EXPERIMENTAL_NOBLUR:
         quietRun(["rm"] + flattenedList)
     profilerStage("NoBlur")
 
-if EXPERIMENTAL_DENOISE:
+if EXPERIMENTAL_DENOISE or STAGE_DOWNSCALE:
     import piexif
-    quietRun(["mv", pfile("images/"), pfile("raw/")])
+    in_dir = images_dir
+    out_dir = pfile("prepped/")
 
-    in_dir = pfile("raw/")
-    out_dir = pfile("images/")
-
-    os.makedirs(pfile("raw/"), exist_ok=True)
-    os.makedirs(pfile("images/"), exist_ok=True)
+    os.makedirs(in_dir, exist_ok=True)
+    os.makedirs(out_dir, exist_ok=True)
 
     images = [
         f for f in os.listdir(in_dir) if f.lower().endswith((".png", ".jpg", ".jpeg"))
@@ -406,6 +418,7 @@ if EXPERIMENTAL_DENOISE:
         search_window = 21
         block_size = 7
         img = cv2.imread(input_path)
+        h, w = img.shape[:2]
         exif_bytes = None
 
         try:
@@ -415,31 +428,45 @@ if EXPERIMENTAL_DENOISE:
         except Exception as e:
             pass
 
-        denoised_img = cv2.fastNlMeansDenoisingColored(
-            src=img,
-            dst=None,
-            h=EXPERIMENTAL_DENOISE_STRENGTH,
-            hColor=EXPERIMENTAL_DENOISE_STRENGTH,
-            templateWindowSize=block_size,
-            searchWindowSize=search_window,
-        )
+        if EXPERIMENTAL_DENOISE:
+            img = cv2.fastNlMeansDenoisingColored(
+                src=img,
+                dst=None,
+                h=EXPERIMENTAL_DENOISE_STRENGTH,
+                hColor=EXPERIMENTAL_DENOISE_STRENGTH,
+                templateWindowSize=block_size,
+                searchWindowSize=search_window,
+            )
+        if STAGE_DOWNSCALE != -1 and h > STAGE_DOWNSCALE:
+            aspect_ratio = w / h
+            new_width = int(STAGE_DOWNSCALE * aspect_ratio)
+            img = cv2.resize(
+                img, (new_width, STAGE_DOWNSCALE), interpolation=cv2.INTER_AREA
+            )
 
-        denoised_rgb = cv2.cvtColor(denoised_img, cv2.COLOR_BGR2RGB)
-        pil_img = Image.fromarray(denoised_rgb)
+        rgb_data = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        pil_img = Image.fromarray(rgb_data)
 
         if exif_dict:
+            if "0th" in exif_dict:
+                exif_dict["0th"][piexif.ImageIFD.ImageWidth] = w
+                exif_dict["0th"][piexif.ImageIFD.ImageLength] = h
+            if "Exif" in exif_dict:
+                exif_dict["Exif"][piexif.ExifIFD.PixelXDimension] = w
+                exif_dict["Exif"][piexif.ExifIFD.PixelYDimension] = h
+            
             exif_bytes = piexif.dump(exif_dict)
             pil_img.save(output_path, format="PNG", exif=exif_bytes)
         else:
             pil_img.save(output_path, format="PNG")
-    profilerStage("Denoising")
+    profilerStage("Denoising & Downscaling")
+    images_dir = out_dir
 
 print("Preparing COLMAP workspace and spatial priors...")
 quietRun(["mkdir", "-p", pfile("colmap")])
 quietRun(["mkdir", "-p", pfile("colmap/sparse/0")])
 
 db_path = pfile("colmap/database.db")
-images_dir = pfile("images")
 priors_file = pfile("colmap/spatial_priors.txt")
 
 first_img = list(AR_positionData.keys())[0]
@@ -450,7 +477,7 @@ ref_alt = AR_positionData[first_img]["altitude"]
 R_a = 6378137.0
 with open(priors_file, "w") as pf:
     for img_name, data in AR_positionData.items():
-        if not Path(pfile("images/" + data["img"])).is_file():
+        if not Path(images_dir + data["img"]).is_file():
             continue
         dlat = math.radians(data["latitude"] - ref_lat)
         dlon = math.radians(data["longitude"] - ref_lon)
@@ -466,7 +493,7 @@ if EXPERIMENTAL_AR:
     with open(pfile("colmap/sparse/0/images.txt"), "w") as img:
         frame_index = 1
         for img_name, data in AR_positionData.items():
-            if not Path(pfile("images/" + data["img"])).is_file():
+            if not Path(images_dir + data["img"]).is_file():
                 continue
             dlat = math.radians(data["latitude"] - ref_lat)
             dlon = math.radians(data["longitude"] - ref_lon)
@@ -490,7 +517,7 @@ if EXPERIMENTAL_AR:
             q = r_world_to_colmap.as_quat()
             qx, qy, qz, qw = q[0], q[1], q[2], q[3]
             img.write(
-                f"{frame_index} {qw} {qx} {qy} {qz} {tvec[0]} {tvec[1]} {tvec[2]} 1 {img_name}\n\n"  # pfile('images/' + img_name)
+                f"{frame_index} {qw} {qx} {qy} {qz} {tvec[0]} {tvec[1]} {tvec[2]} 1 {img_name}\n\n"
             )
             frame_index += 1
 
