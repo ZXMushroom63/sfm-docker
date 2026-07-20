@@ -317,8 +317,8 @@ with open(
 
         img_name = row[IDX_IMAGE]
 
-        if EXPERIMENTAL_DENOISE:
-            img_name = os.path.basename(img_name) + ".png"
+        if EXPERIMENTAL_DENOISE or STAGE_DOWNSCALE:
+            img_name = ".".join(os.path.basename(img_name).split(".")[:-1]) + ".png"
 
         AR_positionData[img_name] = {
             "roll": float(row[IDX_ROLL]),
@@ -408,10 +408,10 @@ if EXPERIMENTAL_DENOISE or STAGE_DOWNSCALE:
         f for f in os.listdir(in_dir) if f.lower().endswith((".png", ".jpg", ".jpeg"))
     ]
 
-    print(f"Denoising {len(images)} images...")
+    print(f"Preprocessing {len(images)} images...")
     from PIL import Image
 
-    for filename in tqdm(images, desc="Denoising Dataset"):
+    for filename in tqdm(images, desc="Capture Dataset"):
         input_path = os.path.join(in_dir, filename)
         base_name = os.path.splitext(filename)[0]
         output_path = os.path.join(out_dir, f"{base_name}.png")
@@ -462,6 +462,8 @@ if EXPERIMENTAL_DENOISE or STAGE_DOWNSCALE:
     profilerStage("Denoising & Downscaling")
     images_dir = out_dir
 
+print(f"COLMAP Image Directory: {images_dir}")
+
 print("Preparing COLMAP workspace and spatial priors...")
 quietRun(["mkdir", "-p", pfile("colmap")])
 quietRun(["mkdir", "-p", pfile("colmap/sparse/0")])
@@ -478,6 +480,7 @@ R_a = 6378137.0
 with open(priors_file, "w") as pf:
     for img_name, data in AR_positionData.items():
         if not Path(images_dir + data["img"]).is_file():
+            print(images_dir + data["img"])
             continue
         dlat = math.radians(data["latitude"] - ref_lat)
         dlon = math.radians(data["longitude"] - ref_lon)
