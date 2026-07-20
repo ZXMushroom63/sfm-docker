@@ -276,6 +276,9 @@ RUN mkdir -p /install/gluemap && git clone --recurse-submodules https://github.c
     --config-settings=cmake.args="-DCeres_DIR=/usr/local/lib/cmake/Ceres" \
     --extra-index-url https://download.pytorch.org/whl/cu128 && \
     cd /install/gluemap/thirdparty/doppelgangers-plusplus/dust3r/croco/models/curope && \
+    # patches until Croco/CuRoPE gets fixed to work on newer CUDA versions
+    wget -O kernels.cu https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/ropepatch/rope/kernels.cu && \
+    wget -O curope2d.py https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/ropepatch/rope/curope2d.py && \
     /opt/gluemap-env/bin/python setup.py build_ext --inplace
 
 # RUN mkdir -p /gluemap && git clone --depth=1 --recurse-submodules --shallow-submodules https://github.com/colmap/gluemap.git /gluemap && \
