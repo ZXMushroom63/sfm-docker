@@ -1,7 +1,5 @@
 #!/usr/bin/python3
 
-# todo: add CUDA+GPU NLMeans denoising
-
 import time
 import sys
 
@@ -19,17 +17,18 @@ def profilerStage(stage):
     sys.stdout.flush()
     sys.stderr.flush()
 
+
 import pathlib
 import os
 import json
 import csv
 import subprocess
 import math
+import random
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor
 import numpy as np
 from scipy.spatial.transform import Rotation as R
-import piexif
 from tqdm import tqdm
 import cv2
 
@@ -49,6 +48,7 @@ EXPERIMENTAL_DENOISE = False
 EXPERIMENTAL_DENOISE_STRENGTH = 10
 EXPERIMENTAL_NOBLUR_THRESH = 18000
 SOLVER_ITERATION_CAP = 200
+EXPERIMENTAL_GLUE = False
 
 profilerStage("Runtime Setup")
 
@@ -87,7 +87,8 @@ if len(sys.argv) < 3:
         + "  spatial=6: Use this flag to modify the radius of the spatial matching stage.\n"
         + "  imfilter: (for AR pipeline) enable image filtering to remove bad cameras.\n"
         + "  bettersift: (for non-ALIKED pipelines) enables SIFT Affine Shape Estimation and Domain Size Pooling, improving accuracy. This makes feature extraction use the CPU instead, making it slower.\n"
-        + "  denoise=10: Uses OpenCV2 Non-Local Means denoising, with a default denoising strength of 10\n",
+        + "  denoise=10: Uses OpenCV2 Non-Local Means denoising, with a default denoising strength of 10\n"
+        + "  glue: Uses the highly experimental GLUEMAP backend for feedforward 3D processing. Expect crashes.",
         file=sys.stderr,
     )
     sys.exit(1)
@@ -115,6 +116,9 @@ if len(sys.argv) > 3:
     if "global" in flags:
         EXPERIMENTAL_GLOMAP = True
         print("Enabling GLOBAL_MAPPER mapper")
+    if "glue" in flags:
+        EXPERIMENTAL_GLUE = True
+        print("Switching pipeline from COLMAP to GLUEMAP")
     if "aliked" in flags:
         EXPERIMENTAL_ALIKED = True
         print("Enabling ALIKED_N16ROT features")
@@ -298,12 +302,12 @@ with open(
     for row in reader:
         if row[0].strip().startswith("//"):
             break
-        
+
         img_name = row[IDX_IMAGE]
-        
+
         if EXPERIMENTAL_DENOISE:
             img_name = os.path.basename(img_name) + ".png"
-        
+
         AR_positionData[img_name] = {
             "roll": float(row[IDX_ROLL]),
             "pitch": float(row[IDX_PITCH]),
@@ -379,6 +383,7 @@ if EXPERIMENTAL_NOBLUR:
     profilerStage("NoBlur")
 
 if EXPERIMENTAL_DENOISE:
+    import piexif
     quietRun(["mv", pfile("images/"), pfile("raw/")])
 
     in_dir = pfile("raw/")
@@ -390,9 +395,10 @@ if EXPERIMENTAL_DENOISE:
     images = [
         f for f in os.listdir(in_dir) if f.lower().endswith((".png", ".jpg", ".jpeg"))
     ]
-    
+
     print(f"Denoising {len(images)} images...")
     from PIL import Image
+
     for filename in tqdm(images, desc="Denoising Dataset"):
         input_path = os.path.join(in_dir, filename)
         base_name = os.path.splitext(filename)[0]
@@ -492,386 +498,433 @@ profilerStage("Creating Priors")
 
 time.sleep(3)
 
-extraExtractionFlags = []
-extraMatchingFlags = ["--FeatureMatching.guided_matching", "1"]
-if EXPERIMENTAL_ALIKED:
-    extraExtractionFlags += [
-        "--FeatureExtraction.type",
-        "ALIKED_N16ROT",
-        "--AlikedExtraction.n16rot_model_path",
-        "/NERFSTUDIO/weights/aliked-n16rot.onnx",
-    ]
-    extraMatchingFlags = [
-        "--FeatureMatching.type",
-        "ALIKED_LIGHTGLUE",
-        "--AlikedMatching.lightglue_model_path",
-        "/NERFSTUDIO/weights/aliked-lightglue.onnx",
-    ]
-elif EXPERIMENTAL_BETTERSIFT:
-    extraExtractionFlags += [
-        "--SiftExtraction.estimate_affine_shape",
-        "1",
-        "--SiftExtraction.domain_size_pooling",
-        "1",
-    ]
+if EXPERIMENTAL_GLUE:  # 3D feedforward
+    if not Path("/NERFSTUDIO/gluemap_checkpoints/dino_salad.ckpt").is_file():
+        print(
+            "You do not have the necessary checkpoint and tensor files needed in order to run GLUEMAP."
+        )
+        print(
+            "Please run 'zx_gluemap_setup' or manually place the following files in /NERFSTUDIO/gluemap_checkpoints/:"
+        )
+        print(" - pi3.safetensors")
+        print(" - dino_salad.ckpt")
+        print(" - vggsfm_v2_0_0_track_predictor.bin")
+        print(" - checkpoint-dg+visym.pth")
+        sys.exit(1)
 
-print("Step 1: Extracting features...")
-
-subprocess.run(
-    [
-        "colmap",
-        "feature_extractor",
-        "--database_path",
-        db_path,
-        "--image_path",
-        images_dir,
-        "--ImageReader.single_camera",
-        "1",
-        "--ImageReader.camera_model",
-        "OPENCV" if EXPERIMENTAL_SOLVER_BACKEND == "CERES" else "SIMPLE_RADIAL",
-        "--FeatureExtraction.use_gpu",
-        "1",
-        "--SiftExtraction.max_num_features",
-        "8192",
-        "--FeatureExtraction.num_threads",
-        "-1",
-    ]
-    + extraExtractionFlags
-)
-
-profilerStage("Feature Extraction")
-
-print("Step 2a: Sequential matching...")
-subprocess.run(
-    [
-        "colmap",
-        "sequential_matcher",
-        "--database_path",
-        db_path,
-        "--SequentialMatching.overlap",
-        "15",
-        "--FeatureMatching.use_gpu",
-        "1",
-    ]
-    + extraMatchingFlags
-)
-profilerStage("Sequential Matching")
-
-print("Step 2b: Spatial matching...")
-subprocess.run(
-    [
-        "colmap",
-        "spatial_matcher",
-        "--database_path",
-        db_path,
-        "--SpatialMatching.max_num_neighbors",
-        "20",
-        "--SpatialMatching.max_distance",
-        str(STAGE_SPATIAL_RADIUS),  # radius limit (5 meters)
-        "--FeatureMatching.use_gpu",
-        "1",
-    ]
-    + extraMatchingFlags
-)
-profilerStage("Spatial Matching")
-
-if STAGE_VOCABTREE:
-    print("Step 2c: Vocab-tree matching...")
+    print("Launching GLUEMAP...")
+    if random.randint(0, 24) > 23:
+        print("Glue!")
     subprocess.run(
         [
-            "colmap",
-            "vocab_tree_matcher",
-            "--database_path",
-            db_path,
-            "--VocabTreeMatching.vocab_tree_path",
-            VOCAB_TREE_PATH,
-            "--VocabTreeMatching.num_images",
-            str(STAGE_VOCABTREE_DEPTH),
-            "--VocabTreeMatching.num_nearest_neighbors",
-            "5",
-            "--FeatureMatching.use_gpu",
+            "gluemap-demo",
+            "--images_path",
+            images_dir,
+            "--write_path",
+            pfile("colmap/sparse"),
+            "--intrinsics_mode",
+            "SHARED",
+            "--camera_model",
+            "OPENCV",
+            "--chosen_model",
+            "pi3",
+            "--path_feedforward",
+            "/NERFSTUDIO/gluemap_checkpoints/pi3.safetensors",
+            "--path_retrieval",
+            "/NERFSTUDIO/gluemap_checkpoints/dino_salad.ckpt",
+            "--path_tracker",
+            "/NERFSTUDIO/gluemap_checkpoints/vggsfm_v2_0_0_track_predictor.bin",
+            "--path_dg",
+            "/NERFSTUDIO/gluemap_checkpoints/checkpoint-dg+visym.pth",
+            "--subfolder_regex",
+            '".*"',
+            "--is_sequential",
+        ]
+    )
+    profilerStage("GLUEMAP")
+else:  # standard COLMAP
+    extraExtractionFlags = []
+    extraMatchingFlags = ["--FeatureMatching.guided_matching", "1"]
+    if EXPERIMENTAL_ALIKED:
+        extraExtractionFlags += [
+            "--FeatureExtraction.type",
+            "ALIKED_N16ROT",
+            "--AlikedExtraction.n16rot_model_path",
+            "/NERFSTUDIO/weights/aliked-n16rot.onnx",
+        ]
+        extraMatchingFlags = [
+            "--FeatureMatching.type",
+            "ALIKED_LIGHTGLUE",
+            "--AlikedMatching.lightglue_model_path",
+            "/NERFSTUDIO/weights/aliked-lightglue.onnx",
+        ]
+    elif EXPERIMENTAL_BETTERSIFT:
+        extraExtractionFlags += [
+            "--SiftExtraction.estimate_affine_shape",
             "1",
-            "--TwoViewGeometry.min_num_inliers",
-            "30",
+            "--SiftExtraction.domain_size_pooling",
+            "1",
         ]
-        + extraMatchingFlags
-    )
-    profilerStage("VocabTree Matching")
 
-if EXPERIMENTAL_AR:
-    print("Step 3a: Generating initial sparse model from AR priors...")
-    with open(pfile("colmap/sparse/0/points3D.txt"), "w") as pf:
-        pf.write("")
-        pf.close()
-    with open(pfile("colmap/sparse/0/cameras.txt"), "w") as pf:
-        pf.write("")
-        pf.close()
+    print("Step 1: Extracting features...")
 
-    print("Step 3b: Extracting camera intrinsics...")
-    subprocess.run(
-        [
-            "/NERFSTUDIO/utils/_pix4d_mksparse",
-            db_path,
-            pfile("colmap/sparse/0"),
-        ]
-    )
     subprocess.run(
         [
             "colmap",
-            "model_converter",
-            "--input_path",
-            pfile("colmap/sparse/0"),
-            "--output_path",
-            pfile("colmap/sparse/0"),
-            "--output_type",
-            "BIN",
-        ]
-    )
-    subprocess.run(["sh", "-c", f"rm {pfile("colmap/sparse/0/*.txt")}"])
-    profilerStage("AR Sparse Setup")
-
-    print("Step 3c: Triangulating points...")
-    subprocess.run(
-        [
-            "colmap",
-            "point_triangulator",
+            "feature_extractor",
             "--database_path",
             db_path,
             "--image_path",
             images_dir,
-            "--input_path",
-            pfile("colmap/sparse/0"),
-            "--output_path",
-            pfile("colmap/sparse/0"),
-            "--Mapper.num_threads",
+            "--ImageReader.single_camera",
+            "1",
+            "--ImageReader.camera_model",
+            "OPENCV" if EXPERIMENTAL_SOLVER_BACKEND == "CERES" else "SIMPLE_RADIAL",
+            "--FeatureExtraction.use_gpu",
+            "1",
+            "--SiftExtraction.max_num_features",
+            "8192",
+            "--FeatureExtraction.num_threads",
             "-1",
-            "--Mapper.ba_use_gpu",
-            "1",
-            "--Mapper.ba_local_backend",
-            EXPERIMENTAL_SOLVER_BACKEND,
-            "--Mapper.ba_global_backend",
-            EXPERIMENTAL_SOLVER_BACKEND,
-            "--clear_points",
-            "1",
-            "--Mapper.tri_complete_max_reproj_error",
-            str(AR_MAX_REPROJECTION_ERROR),
-            "--Mapper.tri_merge_max_reproj_error",
-            str(AR_MAX_REPROJECTION_ERROR),
         ]
+        + extraExtractionFlags
     )
 
-    profilerStage("AR Initial Triangulation")
+    profilerStage("Feature Extraction")
 
-    for loop in range(EXPERIMENTAL_AR_ITERS):
-        print(
-            f"Step 3di [{loop + 1}/{EXPERIMENTAL_AR_ITERS}]: Refining positions and rotations (Bundle Adjustment)..."
-        )
-        late_stage_feature = "1" if loop > ((EXPERIMENTAL_AR_ITERS // 2) - 1) else "0"
+    print("Step 2a: Sequential matching...")
+    subprocess.run(
+        [
+            "colmap",
+            "sequential_matcher",
+            "--database_path",
+            db_path,
+            "--SequentialMatching.overlap",
+            "15",
+            "--FeatureMatching.use_gpu",
+            "1",
+        ]
+        + extraMatchingFlags
+    )
+    profilerStage("Sequential Matching")
+
+    print("Step 2b: Spatial matching...")
+    subprocess.run(
+        [
+            "colmap",
+            "spatial_matcher",
+            "--database_path",
+            db_path,
+            "--SpatialMatching.max_num_neighbors",
+            "20",
+            "--SpatialMatching.max_distance",
+            str(STAGE_SPATIAL_RADIUS),  # radius limit (5 meters)
+            "--FeatureMatching.use_gpu",
+            "1",
+        ]
+        + extraMatchingFlags
+    )
+    profilerStage("Spatial Matching")
+
+    if STAGE_VOCABTREE:
+        print("Step 2c: Vocab-tree matching...")
         subprocess.run(
             [
                 "colmap",
-                "bundle_adjuster",
+                "vocab_tree_matcher",
+                "--database_path",
+                db_path,
+                "--VocabTreeMatching.vocab_tree_path",
+                VOCAB_TREE_PATH,
+                "--VocabTreeMatching.num_images",
+                str(STAGE_VOCABTREE_DEPTH),
+                "--VocabTreeMatching.num_nearest_neighbors",
+                "5",
+                "--FeatureMatching.use_gpu",
+                "1",
+                "--TwoViewGeometry.min_num_inliers",
+                "30",
+            ]
+            + extraMatchingFlags
+        )
+        profilerStage("VocabTree Matching")
+
+    if EXPERIMENTAL_AR:
+        print("Step 3a: Generating initial sparse model from AR priors...")
+        with open(pfile("colmap/sparse/0/points3D.txt"), "w") as pf:
+            pf.write("")
+            pf.close()
+        with open(pfile("colmap/sparse/0/cameras.txt"), "w") as pf:
+            pf.write("")
+            pf.close()
+
+        print("Step 3b: Extracting camera intrinsics...")
+        subprocess.run(
+            [
+                "/NERFSTUDIO/utils/_pix4d_mksparse",
+                db_path,
+                pfile("colmap/sparse/0"),
+            ]
+        )
+        subprocess.run(
+            [
+                "colmap",
+                "model_converter",
                 "--input_path",
                 pfile("colmap/sparse/0"),
                 "--output_path",
                 pfile("colmap/sparse/0"),
-                "--BundleAdjustment.refine_focal_length",
-                late_stage_feature,
-                "--BundleAdjustment.refine_principal_point",
-                "0",
-                "--BundleAdjustment.refine_extra_params",
-                late_stage_feature,
-                "--BundleAdjustment.refine_rig_from_world",
+                "--output_type",
+                "BIN",
+            ]
+        )
+        subprocess.run(["sh", "-c", f"rm {pfile("colmap/sparse/0/*.txt")}"])
+        profilerStage("AR Sparse Setup")
+
+        print("Step 3c: Triangulating points...")
+        subprocess.run(
+            [
+                "colmap",
+                "point_triangulator",
+                "--database_path",
+                db_path,
+                "--image_path",
+                images_dir,
+                "--input_path",
+                pfile("colmap/sparse/0"),
+                "--output_path",
+                pfile("colmap/sparse/0"),
+                "--Mapper.num_threads",
+                "-1",
+                "--Mapper.ba_use_gpu",
                 "1",
-                "--BundleAdjustment.refine_sensor_from_rig",
-                "1",
-                "--BundleAdjustment.refine_points3D",
-                "1",
-                "--BundleAdjustmentCeres.max_num_iterations",
-                str(SOLVER_ITERATION_CAP),
-                "--BundleAdjustmentCaspar.solver_iter_max",
-                str(SOLVER_ITERATION_CAP),
-                "--BundleAdjustment.backend",
+                "--Mapper.ba_local_backend",
                 EXPERIMENTAL_SOLVER_BACKEND,
-                "--BundleAdjustmentCeres.use_gpu",
+                "--Mapper.ba_global_backend",
+                EXPERIMENTAL_SOLVER_BACKEND,
+                "--clear_points",
                 "1",
-                "--BundleAdjustment.min_track_length",
-                "3",
+                "--Mapper.tri_complete_max_reproj_error",
+                str(AR_MAX_REPROJECTION_ERROR),
+                "--Mapper.tri_merge_max_reproj_error",
+                str(AR_MAX_REPROJECTION_ERROR),
             ]
         )
 
-        if loop < EXPERIMENTAL_AR_ITERS - 1:
-            curr_max_error = f"{(AR_MAX_REPROJECTION_ERROR / (loop + 1)):.2f}"
-            print(
-                f"Step 3dii [{loop + 1}/{EXPERIMENTAL_AR_ITERS}]: Filtering outlier points (max reproj error: {curr_max_error}px)..."
-            )
-            quietRun(
-                [
-                    "colmap",
-                    "point_filtering",
-                    "--input_path",
-                    pfile("colmap/sparse/0"),
-                    "--output_path",
-                    pfile("colmap/sparse/0"),
-                    "--max_reproj_error",
-                    curr_max_error,
-                    "--min_track_len",
-                    "3",
-                ]
-            )
+        profilerStage("AR Initial Triangulation")
 
-            if EXPERIMENTAL_IMFILTER:
-                print(
-                    f"Step 3dii-b [{loop + 1}/{EXPERIMENTAL_AR_ITERS}]: Filtering outlier images (max reproj error: {curr_max_error}px)..."
-                )
-                quietRun(
-                    [
-                        "colmap",
-                        "image_filterer",
-                        "--input_path",
-                        pfile("colmap/sparse/0"),
-                        "--output_path",
-                        pfile("colmap/sparse/0"),
-                        "--min_num_observations",
-                        "10",
-                        "--min_focal_length_ratio",
-                        "0.1",
-                        "--max_focal_length_ratio",
-                        "10.0",
-                    ]
-                )
-
+        for loop in range(EXPERIMENTAL_AR_ITERS):
             print(
-                f"Step 3diii [{loop + 1}/{EXPERIMENTAL_AR_ITERS}]: Re-triangulating points with optimized poses..."
+                f"Step 3di [{loop + 1}/{EXPERIMENTAL_AR_ITERS}]: Refining positions and rotations (Bundle Adjustment)..."
+            )
+            late_stage_feature = (
+                "1" if loop > ((EXPERIMENTAL_AR_ITERS // 2) - 1) else "0"
             )
             subprocess.run(
                 [
                     "colmap",
-                    "point_triangulator",
-                    "--database_path",
-                    db_path,
-                    "--image_path",
-                    images_dir,
+                    "bundle_adjuster",
                     "--input_path",
                     pfile("colmap/sparse/0"),
                     "--output_path",
                     pfile("colmap/sparse/0"),
-                    "--Mapper.num_threads",
-                    "-1",
-                    "--Mapper.ba_use_gpu",
+                    "--BundleAdjustment.refine_focal_length",
+                    late_stage_feature,
+                    "--BundleAdjustment.refine_principal_point",
+                    "0",
+                    "--BundleAdjustment.refine_extra_params",
+                    late_stage_feature,
+                    "--BundleAdjustment.refine_rig_from_world",
                     "1",
-                    "--Mapper.ba_local_backend",
+                    "--BundleAdjustment.refine_sensor_from_rig",
+                    "1",
+                    "--BundleAdjustment.refine_points3D",
+                    "1",
+                    "--BundleAdjustmentCeres.max_num_iterations",
+                    str(SOLVER_ITERATION_CAP),
+                    "--BundleAdjustmentCaspar.solver_iter_max",
+                    str(SOLVER_ITERATION_CAP),
+                    "--BundleAdjustment.backend",
                     EXPERIMENTAL_SOLVER_BACKEND,
-                    "--Mapper.ba_global_backend",
-                    EXPERIMENTAL_SOLVER_BACKEND,
-                    "--Mapper.tri_complete_max_reproj_error",
-                    curr_max_error,
-                    "--Mapper.tri_merge_max_reproj_error",
-                    curr_max_error,
+                    "--BundleAdjustmentCeres.use_gpu",
+                    "1",
+                    "--BundleAdjustment.min_track_length",
+                    "3",
                 ]
             )
-        profilerStage(f"AR Iteration {loop+1}")
-elif EXPERIMENTAL_GLOMAP:
-    print("Step 3a: Calibrating view graph...")
-    subprocess.run(["colmap", "view_graph_calibrator", "--database_path", db_path])
-    profilerStage("View Graph Calibration")
 
-    print("Step 3b: Global reconstruction...")
+            if loop < EXPERIMENTAL_AR_ITERS - 1:
+                curr_max_error = f"{(AR_MAX_REPROJECTION_ERROR / (loop + 1)):.2f}"
+                print(
+                    f"Step 3dii [{loop + 1}/{EXPERIMENTAL_AR_ITERS}]: Filtering outlier points (max reproj error: {curr_max_error}px)..."
+                )
+                quietRun(
+                    [
+                        "colmap",
+                        "point_filtering",
+                        "--input_path",
+                        pfile("colmap/sparse/0"),
+                        "--output_path",
+                        pfile("colmap/sparse/0"),
+                        "--max_reproj_error",
+                        curr_max_error,
+                        "--min_track_len",
+                        "3",
+                    ]
+                )
+
+                if EXPERIMENTAL_IMFILTER:
+                    print(
+                        f"Step 3dii-b [{loop + 1}/{EXPERIMENTAL_AR_ITERS}]: Filtering outlier images (max reproj error: {curr_max_error}px)..."
+                    )
+                    quietRun(
+                        [
+                            "colmap",
+                            "image_filterer",
+                            "--input_path",
+                            pfile("colmap/sparse/0"),
+                            "--output_path",
+                            pfile("colmap/sparse/0"),
+                            "--min_num_observations",
+                            "10",
+                            "--min_focal_length_ratio",
+                            "0.1",
+                            "--max_focal_length_ratio",
+                            "10.0",
+                        ]
+                    )
+
+                print(
+                    f"Step 3diii [{loop + 1}/{EXPERIMENTAL_AR_ITERS}]: Re-triangulating points with optimized poses..."
+                )
+                subprocess.run(
+                    [
+                        "colmap",
+                        "point_triangulator",
+                        "--database_path",
+                        db_path,
+                        "--image_path",
+                        images_dir,
+                        "--input_path",
+                        pfile("colmap/sparse/0"),
+                        "--output_path",
+                        pfile("colmap/sparse/0"),
+                        "--Mapper.num_threads",
+                        "-1",
+                        "--Mapper.ba_use_gpu",
+                        "1",
+                        "--Mapper.ba_local_backend",
+                        EXPERIMENTAL_SOLVER_BACKEND,
+                        "--Mapper.ba_global_backend",
+                        EXPERIMENTAL_SOLVER_BACKEND,
+                        "--Mapper.tri_complete_max_reproj_error",
+                        curr_max_error,
+                        "--Mapper.tri_merge_max_reproj_error",
+                        curr_max_error,
+                    ]
+                )
+            profilerStage(f"AR Iteration {loop+1}")
+    elif EXPERIMENTAL_GLOMAP:
+        print("Step 3a: Calibrating view graph...")
+        subprocess.run(["colmap", "view_graph_calibrator", "--database_path", db_path])
+        profilerStage("View Graph Calibration")
+
+        print("Step 3b: Global reconstruction...")
+        subprocess.run(
+            [
+                "colmap",
+                "global_mapper",
+                "--database_path",
+                db_path,
+                "--image_path",
+                images_dir,
+                "--output_path",
+                pfile("colmap/sparse"),
+                "--GlobalMapper.num_threads",
+                "-1",
+                "--GlobalMapper.track_min_num_views_per_track",
+                "6",
+                "--GlobalMapper.ba_ceres_use_gpu",
+                "1",
+                "--GlobalMapper.gp_use_gpu",
+                "1",
+                "--GlobalMapper.ba_backend",
+                EXPERIMENTAL_SOLVER_BACKEND,
+                "--GlobalMapper.ba_ceres_max_num_iterations",
+                str(SOLVER_ITERATION_CAP),
+            ]
+        )
+        profilerStage("Global Mapper")
+    else:
+        print("Step 3: Pose prior mapper...")
+        subprocess.run(
+            [
+                "colmap",
+                "pose_prior_mapper",
+                "--database_path",
+                db_path,
+                "--image_path",
+                images_dir,
+                "--output_path",
+                pfile("colmap/sparse"),
+                "--Mapper.num_threads",
+                "-1",
+                "--Mapper.filter_max_reproj_error",
+                "1.5",
+                "--Mapper.min_num_matches",
+                "35",
+                "--Mapper.max_reg_trials",
+                "1",
+                "--Mapper.ba_global_backend",
+                "CERES",
+                "--Mapper.ba_local_backend",
+                "CERES",
+                "--Mapper.ba_use_gpu",
+                "1",
+            ]
+        )
+        profilerStage("Pose Prior Mapper")
+
+    print("Step 4a: Model alignment...")
     subprocess.run(
         [
             "colmap",
-            "global_mapper",
-            "--database_path",
-            db_path,
-            "--image_path",
-            images_dir,
+            "model_aligner",
+            "--input_path",
+            pfile("colmap/sparse/0"),
             "--output_path",
-            pfile("colmap/sparse"),
-            "--GlobalMapper.num_threads",
-            "-1",
-            "--GlobalMapper.track_min_num_views_per_track",
-            "6",
-            "--GlobalMapper.ba_ceres_use_gpu",
-            "1",
-            "--GlobalMapper.gp_use_gpu",
-            "1",
-            "--GlobalMapper.ba_backend",
-            EXPERIMENTAL_SOLVER_BACKEND,
-            "--GlobalMapper.ba_ceres_max_num_iterations",
-            str(SOLVER_ITERATION_CAP),
-        ]
-    )
-    profilerStage("Global Mapper")
-else:
-    print("Step 3: Pose prior mapper...")
-    subprocess.run(
-        [
-            "colmap",
-            "pose_prior_mapper",
-            "--database_path",
-            db_path,
-            "--image_path",
-            images_dir,
-            "--output_path",
-            pfile("colmap/sparse"),
-            "--Mapper.num_threads",
-            "-1",
-            "--Mapper.filter_max_reproj_error",
+            pfile("colmap/sparse/0"),
+            pfile("colmap/sparse/0"),
+            pfile("colmap/sparse/0"),
+            "--ref_images_path",
+            priors_file,
+            "--ref_is_gps",
+            "0",
+            "--alignment_type",
+            "custom",
+            # "--robust_alignment", "1",
+            "--alignment_max_error",
             "1.5",
-            "--Mapper.min_num_matches",
-            "35",
-            "--Mapper.max_reg_trials",
-            "1",
-            "--Mapper.ba_global_backend",
-            "CERES",
-            "--Mapper.ba_local_backend",
-            "CERES",
-            "--Mapper.ba_use_gpu",
-            "1",
         ]
     )
-    profilerStage("Pose Prior Mapper")
+    profilerStage("Model Alignment")
 
-print("Step 4a: Model alignment...")
-subprocess.run(
-    [
-        "colmap",
-        "model_aligner",
-        "--input_path",
-        pfile("colmap/sparse/0"),
-        "--output_path",
-        pfile("colmap/sparse/0"),
-        pfile("colmap/sparse/0"),
-        pfile("colmap/sparse/0"),
-        "--ref_images_path",
-        priors_file,
-        "--ref_is_gps",
-        "0",
-        "--alignment_type",
-        "custom",
-        # "--robust_alignment", "1",
-        "--alignment_max_error",
-        "1.5",
-    ]
-)
-profilerStage("Model Alignment")
-
-print("Step 4b: Model orientation alignment...")
-subprocess.run(
-    [
-        "colmap",
-        "model_orientation_aligner",
-        "--input_path",
-        pfile("colmap/sparse/0"),
-        "--output_path",
-        pfile("colmap/sparse/0"),
-        "--image_path",
-        images_dir,
-        "--method",
-        "IMAGE-ORIENTATION",
-    ]
-)
-profilerStage("Model Orientation Alignment")
+    print("Step 4b: Model orientation alignment...")
+    subprocess.run(
+        [
+            "colmap",
+            "model_orientation_aligner",
+            "--input_path",
+            pfile("colmap/sparse/0"),
+            "--output_path",
+            pfile("colmap/sparse/0"),
+            "--image_path",
+            images_dir,
+            "--method",
+            "IMAGE-ORIENTATION",
+        ]
+    )
+    profilerStage("Model Orientation Alignment")
 
 print("Shifting back to regular filesystem...")
 quietRun(["mv", dest_path, true_dest_path])
