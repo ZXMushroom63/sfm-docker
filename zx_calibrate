@@ -1,0 +1,74 @@
+#!/usr/bin/python3
+import cv2
+import numpy as np
+import glob
+import time
+import piexif
+
+CHECKERBOARD = (11, 7) 
+SQUARE_SIZE = 0.0211 #meters
+
+criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 1000, 1e-7)
+
+objp = np.zeros((CHECKERBOARD[0] * CHECKERBOARD[1], 3), np.float32)
+objp[:, :2] = np.mgrid[0:CHECKERBOARD[0], 0:CHECKERBOARD[1]].T.reshape(-1, 2)
+objp = objp * SQUARE_SIZE
+
+objpoints = []
+imgpoints = []
+
+images = glob.glob('cal_calibration_data/*.jpg')
+
+camera = ""
+maker = ""
+
+for filename in images:
+    if camera == "":
+        try:
+            exif_dict = piexif.load(filename)
+            print(exif_dict["0th"])
+            camera = exif_dict["0th"][272].decode("utf-8").replace("PIX4Dcatch.", "")
+            maker = exif_dict["0th"][271].decode("utf-8")
+        except:
+            camera = "unknown"
+            maker = "unknown"
+    img = cv2.imread(filename)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    ret, corners = cv2.findChessboardCorners(gray, CHECKERBOARD, None)
+
+    if ret:
+        objpoints.append(objp)
+
+        corners2 = cv2.cornerSubPix(gray, corners, (21, 21), (-1, -1), criteria)
+        imgpoints.append(corners2)
+
+ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(
+    objpoints, imgpoints, gray.shape[::-1], None, None, flags=cv2.CALIB_FIX_K3
+)
+
+print("Reprojection errors...")
+time.sleep(1)
+for i in range(len(objpoints)):
+    imgpoints2, _ = cv2.projectPoints(objp, rvecs[i], tvecs[i], mtx, dist)
+    error = cv2.norm(imgpoints[i], imgpoints2, cv2.NORM_L2) / len(imgpoints2)
+    print(f"{images[i]} - {error}px")
+    
+print("^ remove images with high error values")
+print()
+
+cmap_text = ",".join(map(lambda x: str(x), [
+    mtx[0,0], #f_x
+    mtx[1,1], #f_y
+    mtx[0,2], #c_x
+    mtx[1,2], #c_y
+    dist[0,0], #k_1
+    dist[0,1], #k_2
+    dist[0,2], #p_1
+    dist[0,3], #p_2
+])) + f"\n{camera},{maker}\n"
+print(f"COLMAP string: {cmap_text}")
+fname = f"{camera}_{time.asctime().replace("  ", " ").replace(" ", "_").replace(":", "-")}.cv2_calib.csv"
+print(f"Saving calibration data to {fname}")
+with open(fname, mode="w") as f:
+    f.write(cmap_text)

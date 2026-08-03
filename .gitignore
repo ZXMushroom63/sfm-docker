@@ -15,3 +15,5 @@ gluemap_checkpoints/*
 logs/
 logs/*
 logs_*
+*calibration_data/
+*.cv2_calib.csv

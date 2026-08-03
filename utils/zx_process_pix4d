@@ -1,5 +1,13 @@
 #!/usr/bin/python3
 
+# TODO: Add options for explicit camera intrinsics
+# - intrinsics for pose prior mapper
+# - intrinsics for AR pipeline
+# - intrinsics for GLOMAP
+# -  disable intrinsic+focalpoint optimisation on all bundle ajdustment stages/mapper pilelines if predefined camera intrinsics
+# - if possible, pass intrinsics to gluemap-demo
+# ^done mostlys
+
 import time
 import sys
 
@@ -50,6 +58,8 @@ EXPERIMENTAL_DENOISE_STRENGTH = 10
 EXPERIMENTAL_NOBLUR_THRESH = 18000
 SOLVER_ITERATION_CAP = 200
 EXPERIMENTAL_GLUE = False
+HAS_CUSTOM_INTRINSICS = False
+CUSTOM_INTRINSICS = ""
 
 profilerStage("Runtime Setup")
 
@@ -91,6 +101,7 @@ if len(sys.argv) < 3:
         + "  denoise=10: Uses OpenCV2 Non-Local Means denoising, with a default denoising strength of 10\n"
         + "  downscale=720: Downscales (area average) to the specified pixel height, after any denoising stages. Recommended to set to 540 or lower for GLUEMAP\n"
         + "  glue: Uses the highly experimental GLUEMAP backend for feedforward 3D processing. Expect crashes.",
+        +"  intrinsics=file.cv2_calib.csv: [UNDER CONSTRUCTION, OPENCV ONLY] uses given intrinsics and disables intrinsic refinement to improve solution accuracy. Does not work on Caspar backend.",
         file=sys.stderr,
     )
     sys.exit(1)
@@ -153,6 +164,16 @@ if len(sys.argv) > 3:
             print(
                 f"Note: if your position data is noisy, try switching from the experimental AR pipeline to GLOBAL"
             )
+        if flag.startswith("intrinsics="):
+            HAS_CUSTOM_INTRINSICS = True
+            intrinsics_data = []
+            with open(flag.replace("intrinsics=", "").strip()) as f:
+                intrinsics_data = f.readlines()
+            CUSTOM_INTRINSICS = intrinsics_data[0].strip()
+            print(f"Using custom camera intrinsics: {CUSTOM_INTRINSICS}")
+            maker = intrinsics_data[1].split(",")[1]
+            model = intrinsics_data[1].split(",")[0]
+            print(f"Camera model: {model} by {maker}")
         if flag.startswith("denoise"):
             EXPERIMENTAL_DENOISE = True
             if flag.startswith("denoise="):
@@ -167,12 +188,8 @@ if len(sys.argv) > 3:
             STAGE_DOWNSCALE = 720
             if flag.startswith("downscale="):
                 STAGE_DOWNSCALE = int(flag.replace("downscale=", ""))
-            print(
-                f"Enabling downscaling to {STAGE_DOWNSCALE}p"
-            )
-            print(
-                f"Note: Will not affect images used in Nerfstudio!"
-            )
+            print(f"Enabling downscaling to {STAGE_DOWNSCALE}p")
+            print(f"Note: Will not affect images used in Nerfstudio!")
         if flag.startswith("vocab"):
             STAGE_VOCABTREE = True
             if flag.startswith("vocab="):
@@ -186,6 +203,12 @@ if len(sys.argv) > 3:
         if flag.startswith("spatial="):
             STAGE_SPATIAL_RADIUS = int(flag.replace("spatial=", ""))
             print(f"Setting spatial matching radius to {STAGE_SPATIAL_RADIUS}")
+
+if HAS_CUSTOM_INTRINSICS and (EXPERIMENTAL_SOLVER_BACKEND == "CASPAR"):
+    print(
+        "Caspar does not support the OPENCV camera model, so your custom intrinsics can not be used."
+    )
+    sys.exit()
 
 if EXPERIMENTAL_AR and (EXPERIMENTAL_ALIKED or EXPERIMENTAL_BETTERSIFT):
     print(
@@ -317,7 +340,7 @@ with open(
 
         img_name = row[IDX_IMAGE]
 
-        if EXPERIMENTAL_DENOISE or STAGE_DOWNSCALE:
+        if EXPERIMENTAL_DENOISE or (STAGE_DOWNSCALE != -1):
             img_name = ".".join(os.path.basename(img_name).split(".")[:-1]) + ".png"
 
         AR_positionData[img_name] = {
@@ -396,8 +419,9 @@ if EXPERIMENTAL_NOBLUR:
         quietRun(["rm"] + flattenedList)
     profilerStage("NoBlur")
 
-if EXPERIMENTAL_DENOISE or STAGE_DOWNSCALE:
+if EXPERIMENTAL_DENOISE or (STAGE_DOWNSCALE != -1):
     import piexif
+
     in_dir = images_dir
     out_dir = pfile("prepped/")
 
@@ -454,7 +478,7 @@ if EXPERIMENTAL_DENOISE or STAGE_DOWNSCALE:
             if "Exif" in exif_dict:
                 exif_dict["Exif"][piexif.ExifIFD.PixelXDimension] = w
                 exif_dict["Exif"][piexif.ExifIFD.PixelYDimension] = h
-            
+
             exif_bytes = piexif.dump(exif_dict)
             pil_img.save(output_path, format="PNG", exif=exif_bytes)
         else:
@@ -594,6 +618,11 @@ else:  # standard COLMAP
             "1",
             "--SiftExtraction.domain_size_pooling",
             "1",
+        ]
+    if HAS_CUSTOM_INTRINSICS:
+        extraExtractionFlags += [
+            "--ImageReader.camera_params",
+            CUSTOM_INTRINSICS,
         ]
 
     print("Step 1: Extracting features...")
@@ -748,7 +777,10 @@ else:  # standard COLMAP
                 f"Step 3di [{loop + 1}/{EXPERIMENTAL_AR_ITERS}]: Refining positions and rotations (Bundle Adjustment)..."
             )
             late_stage_feature = (
-                "1" if loop > ((EXPERIMENTAL_AR_ITERS // 2) - 1) else "0"
+                "1"
+                if (loop > ((EXPERIMENTAL_AR_ITERS // 2) - 1))
+                and not HAS_CUSTOM_INTRINSICS
+                else "0"
             )
             subprocess.run(
                 [
@@ -860,6 +892,18 @@ else:  # standard COLMAP
         profilerStage("View Graph Calibration")
 
         print("Step 3b: Global reconstruction...")
+        GLOBAL_MAPPER_REFINE_OPTS = (
+            [
+                "--GlobalMapper.ba_refine_focal_length",
+                "0",
+                "--GlobalMapper.ba_refine_principal_point",
+                "0",
+                "--GlobalMapper.ba_refine_extra_params",
+                "0",
+            ]
+            if HAS_CUSTOM_INTRINSICS
+            else []
+        )
         subprocess.run(
             [
                 "colmap",
@@ -887,6 +931,18 @@ else:  # standard COLMAP
         profilerStage("Global Mapper")
     else:
         print("Step 3: Pose prior mapper...")
+        POSE_MAPPER_REFINE_OPTS = (
+            [
+                "--Mapper.ba_refine_focal_length",
+                "0",
+                "--Mapper.ba_refine_principal_point",
+                "0",
+                "--Mapper.ba_refine_extra_params",
+                "0",
+            ]
+            if HAS_CUSTOM_INTRINSICS
+            else []
+        )
         subprocess.run(
             [
                 "colmap",
@@ -912,6 +968,7 @@ else:  # standard COLMAP
                 "--Mapper.ba_use_gpu",
                 "1",
             ]
+            + REFINE_OPTS
         )
         profilerStage("Pose Prior Mapper")
 
