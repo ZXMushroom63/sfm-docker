@@ -504,7 +504,7 @@ R_a = 6378137.0
 with open(priors_file, "w") as pf:
     for img_name, data in AR_positionData.items():
         if not Path(images_dir + data["img"]).is_file():
-            print(images_dir + data["img"])
+            #print(images_dir + data["img"])
             continue
         dlat = math.radians(data["latitude"] - ref_lat)
         dlon = math.radians(data["longitude"] - ref_lon)
@@ -968,7 +968,7 @@ else:  # standard COLMAP
                 "--Mapper.ba_use_gpu",
                 "1",
             ]
-            + REFINE_OPTS
+            + POSE_MAPPER_REFINE_OPTS
         )
         profilerStage("Pose Prior Mapper")
 
