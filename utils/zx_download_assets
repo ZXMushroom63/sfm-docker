@@ -13,19 +13,19 @@ if [ "$SZ" = "aliked" ]; then
     wget https://github.com/colmap/colmap/releases/download/3.13.0/aliked-lightglue.onnx
     wget https://github.com/colmap/colmap/releases/download/3.13.0/vocab_tree_faiss_flickr100K_words64K_aliked_n16rot.bin
     wget https://github.com/colmap/colmap/releases/download/3.13.0/vocab_tree_faiss_flickr100K_words64K_aliked_n32.bin
-if [ "$SZ" = "sift_matchers" ]; then
+elif [ "$SZ" = "sift_matchers" ]; then
     echo "Downloading SIFT ONNX matcher models..."
     sleep 1
     wget https://github.com/colmap/colmap/releases/download/3.13.0/sift-lightglue.onnx
     wget https://github.com/colmap/colmap/releases/download/3.13.0/bruteforce-matcher.onnx
-if [ "$SZ" = "loma_base" ]; then
+elif [ "$SZ" = "loma_base" ]; then
     echo "Downloading LoMa-B ONNX models and vocabtrees..."
     sleep 1
     wget https://github.com/davnords/storage/releases/download/loma/loma_detector.onnx
     wget https://github.com/davnords/storage/releases/download/loma/loma_descriptor_dedode_b.onnx
     wget https://github.com/davnords/storage/releases/download/loma/loma_matcher_B.onnx
     wget https://github.com/davnords/storage/releases/download/loma/vocab_tree_loma_b_flickr100k.bin
-if [ "$SZ" = "loma_large" ]; then
+elif [ "$SZ" = "loma_large" ]; then
     echo "Downloading LoMa-L ONNX models and vocabtrees..."
     sleep 1
     wget https://github.com/davnords/storage/releases/download/loma/loma_detector.onnx
