@@ -67,23 +67,23 @@ CUSTOM_INTRINSICS = ""
 
 def registerOnnxModel(easyName: str, profile: dict):
     ONNX_SETUPDB[easyName] = profile
-    profile["prereqs"] = []
+    prereqs = []
     for k in profile.keys():
         v = profile[k]
         t = type(v)
         if t == str:
             if v.startswith("/"):
                 profile[k] = "/NERFSTUDIO/weights" + v
-                profile["prereqs"].append(profile[k])
+                prereqs.append(profile[k])
         if t == list:
             newList = []
             for i in v:
                 if i.startswith("/"):
                     newList.append("/NERFSTUDIO/weights" + i)
-                    profile["prereqs"].append(newList[-1])
+                    prereqs.append(newList[-1])
                 else:
                     newList.append(i)
-    exit()
+    profile["prereqs"] = prereqs
     print(f"Registered ONNX feature model: {easyName}")
 
 
@@ -178,7 +178,7 @@ if len(sys.argv) < 3:
         + "  bettersift: (for non-ONNX pipelines) enables SIFT Affine Shape Estimation and Domain Size Pooling, improving accuracy. This makes feature extraction use the CPU instead, making it slower.\n"
         + "  denoise=10: Uses OpenCV2 Non-Local Means denoising, with a default denoising strength of 10\n"
         + "  downscale=720: Downscales (area average) to the specified pixel height, after any denoising stages. Recommended to set to 540 or lower for GLUEMAP\n"
-        + "  glue: Uses the highly experimental GLUEMAP backend for feedforward 3D processing. Expect crashes.",
+        + "  glue: Uses the highly experimental GLUEMAP backend for feedforward 3D processing. Expect crashes."
         +"  intrinsics=file.cv2_calib.csv: uses given intrinsics and disables intrinsic refinement to improve solution accuracy. Does not work on Caspar backend. Get them using zx_calibrate",
         file=sys.stderr,
     )
