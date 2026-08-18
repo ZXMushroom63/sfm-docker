@@ -4,11 +4,39 @@ import numpy as np
 import glob
 import time
 import piexif
+import sys
 
-CHECKERBOARD = (11, 7) 
-SQUARE_SIZE = 0.0211 #meters
+#args needed: dataset
+#args needed: checkerboard size WxH
+#side length (metres)
 
-criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 1000, 1e-7)
+
+if len(sys.argv) < 4:
+    print("Simple OpenCV Camera calibrator!")
+    print()
+    print("How get a dataset: ")
+    print("1. Print a sharp black & white checkerboard grid of squares, with a different number of rows and columns (10x8 is a good number, for example)")
+    print("2. Glue it or tape it onto a flat surface to be really perfectly flat. Distortions will cause bad calibration!")
+    print("3. Switch your camera to a manual focus/disable autofocus, and pick a good distance from the checkerboard.")
+    print("4. Get a dataset of 24-32 sharp images, ensuring that the whole rectange is in frame. Capture the grid on all parts of the camera FOV, at many angles and distances. ")
+    print("   |-- res of 1080p or higher is ideal.")
+    print("5. Measure the side length of one checkerboard tile in meters, to 0.1mm (0.001) accuracy or better. Don't lose this value!")
+    print("")
+    print("")
+    print("Creating camera intrinsics: ")
+    print("Run this utility in this format (all image formats are accepted!)")
+    print("$ zx_calibrate my_dataset/*.jpg 10x8 0.0211")
+    print("where: [dataset selector] [grid rows x columns] [side length in meters]")
+    print("")
+    print("After processing completes, check for any images with a high reprojection error, and delete them from the dataset.")
+    print("Rerun this refining process until you reach a good error value (sub 1px error should be achievable!)")
+    
+    sys.exit()
+
+CHECKERBOARD = tuple(map(lambda x: int(x) - 1, sys.argv[2].split("x"))) #mine: inner corners = (11,7)
+SQUARE_SIZE = float(sys.argv[3]) #mine: 0.0211 meters
+
+criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 1001, 1e-7)
 
 objp = np.zeros((CHECKERBOARD[0] * CHECKERBOARD[1], 3), np.float32)
 objp[:, :2] = np.mgrid[0:CHECKERBOARD[0], 0:CHECKERBOARD[1]].T.reshape(-1, 2)
@@ -17,7 +45,7 @@ objp = objp * SQUARE_SIZE
 objpoints = []
 imgpoints = []
 
-images = glob.glob('cal_calibration_data/*.jpg')
+images = glob.glob(sys.argv[1])
 
 camera = ""
 maker = ""

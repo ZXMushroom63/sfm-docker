@@ -439,6 +439,8 @@ RUN wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-d
     wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/utils/_pix4d_mksparse && \
     chmod +x /usr/local/bin/_pix4d_mksparse && \
     wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/utils/zx_densify && \
-    chmod +x /usr/local/bin/zx_densify
+    chmod +x /usr/local/bin/zx_densify &&
+    wget -P /usr/local/bin/ https://raw.githubusercontent.com/ZXMushroom63/sfm-docker/refs/heads/main/utils/zx_calibrate && \
+    chmod +x /usr/local/bin/zx_calibrate
 
 USER root

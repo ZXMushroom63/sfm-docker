@@ -179,7 +179,7 @@ if len(sys.argv) < 3:
         + "  denoise=10: Uses OpenCV2 Non-Local Means denoising, with a default denoising strength of 10\n"
         + "  downscale=720: Downscales (area average) to the specified pixel height, after any denoising stages. Recommended to set to 540 or lower for GLUEMAP\n"
         + "  glue: Uses the highly experimental GLUEMAP backend for feedforward 3D processing. Expect crashes.",
-        +"  intrinsics=file.cv2_calib.csv: [UNDER CONSTRUCTION, OPENCV ONLY] uses given intrinsics and disables intrinsic refinement to improve solution accuracy. Does not work on Caspar backend.",
+        +"  intrinsics=file.cv2_calib.csv: uses given intrinsics and disables intrinsic refinement to improve solution accuracy. Does not work on Caspar backend. Get them using zx_calibrate",
         file=sys.stderr,
     )
     sys.exit(1)
