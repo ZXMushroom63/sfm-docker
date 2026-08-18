@@ -106,9 +106,9 @@ registerOnnxModel(
 )
 
 registerOnnxModel(
-    "loma",
+    "loma_base",
     {
-        "downloadProfile": "loma",
+        "downloadProfile": "loma_base",
         "vocabTree": "/vocab_tree_loma_b_flickr100k.bin",
         "extractionType": "LOMA_B",
         "extractorOptions": [
@@ -119,6 +119,23 @@ registerOnnxModel(
         ],
         "matcherType": "LOMA_B",
         "matcherOptions": ["--LomaMatching.b_model_path", "/loma_matcher_B.onnx"],
+    },
+)
+
+registerOnnxModel(
+    "loma_large",
+    {
+        "downloadProfile": "loma_large",
+        "vocabTree": "/vocab_tree_loma_b_flickr100k.bin",
+        "extractionType": "LOMA_B",
+        "extractorOptions": [
+            "--LomaExtraction.detector_model_path",
+            "/loma_detector.onnx",
+            "--LomaExtraction.descriptor_model_path",
+            "/loma_descriptor_dedode_b.onnx",
+        ],
+        "matcherType": "LOMA_L",
+        "matcherOptions": ["--LomaMatching.l_model_path", "/loma_matcher_L.onnx"],
     },
 )
 
