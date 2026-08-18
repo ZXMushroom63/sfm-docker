@@ -83,6 +83,7 @@ def registerOnnxModel(easyName: str, profile: dict):
                     prereqs.append(newList[-1])
                 else:
                     newList.append(i)
+            profile[k] = newList
     profile["prereqs"] = prereqs
     print(f"Registered ONNX feature model: {easyName}")
 
