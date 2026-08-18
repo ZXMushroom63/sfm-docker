@@ -93,7 +93,7 @@ registerOnnxModel(
         "downloadProfile": "aliked",  # profile name to pass to zx_download_assets
         "vocabTree": "/vocab_tree_faiss_flickr100K_words64K_aliked_n16rot.bin",  # filename of vocab tree
         "extractionType": "ALIKED_N16ROT",
-        "extractorOptions": [
+        "extractionOptions": [
             "--AlikedExtraction.n16rot_model_path",
             "/aliked-n16rot.onnx",
         ],
@@ -111,7 +111,7 @@ registerOnnxModel(
         "downloadProfile": "loma_base",
         "vocabTree": "/vocab_tree_loma_b_flickr100k.bin",
         "extractionType": "LOMA_B",
-        "extractorOptions": [
+        "extractionOptions": [
             "--LomaExtraction.detector_model_path",
             "/loma_detector.onnx",
             "--LomaExtraction.descriptor_model_path",
@@ -179,7 +179,7 @@ if len(sys.argv) < 3:
         + "  denoise=10: Uses OpenCV2 Non-Local Means denoising, with a default denoising strength of 10\n"
         + "  downscale=720: Downscales (area average) to the specified pixel height, after any denoising stages. Recommended to set to 540 or lower for GLUEMAP\n"
         + "  glue: Uses the highly experimental GLUEMAP backend for feedforward 3D processing. Expect crashes."
-        +"  intrinsics=file.cv2_calib.csv: uses given intrinsics and disables intrinsic refinement to improve solution accuracy. Does not work on Caspar backend. Get them using zx_calibrate",
+        + "  intrinsics=file.cv2_calib.csv: uses given intrinsics and disables intrinsic refinement to improve solution accuracy. Does not work on Caspar backend. Get them using zx_calibrate",
         file=sys.stderr,
     )
     sys.exit(1)
@@ -303,9 +303,7 @@ if EXPERIMENTAL_AR and ((EXPERIMENTAL_ONNX_CFG != None) or EXPERIMENTAL_BETTERSI
 if EXPERIMENTAL_ONNX_CFG != None:
     for prereq in EXPERIMENTAL_ONNX_CFG["prereqs"]:
         if not Path(prereq).is_file():
-            print(
-                f"Error: {prereq} was not found!!!"
-            )
+            print(f"Error: {prereq} was not found!!!")
             print(
                 f" - 'zx_download_assets {EXPERIMENTAL_ONNX_CFG["downloadProfile"]}' should resolve this."
             )
@@ -691,7 +689,7 @@ else:  # standard COLMAP
             "--FeatureMatching.type",
             EXPERIMENTAL_ONNX_CFG["matcherType"],
         ] + EXPERIMENTAL_ONNX_CFG["matcherOptions"]
-        
+
     elif EXPERIMENTAL_BETTERSIFT:
         extraExtractionFlags += [
             "--SiftExtraction.estimate_affine_shape",
