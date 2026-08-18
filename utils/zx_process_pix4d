@@ -41,7 +41,10 @@ from tqdm import tqdm
 import cv2
 
 EXPERIMENTAL_GLOMAP = False
-EXPERIMENTAL_ALIKED = False
+
+EXPERIMENTAL_ONNX_CFG = None
+ONNX_SETUPDB = {}
+
 EXPERIMENTAL_NOBLUR = False
 EXPERIMENTAL_IMFILTER = False
 EXPERIMENTAL_BETTERSIFT = False
@@ -61,6 +64,64 @@ EXPERIMENTAL_GLUE = False
 HAS_CUSTOM_INTRINSICS = False
 CUSTOM_INTRINSICS = ""
 
+
+def registerOnnxModel(easyName: str, profile: dict):
+    ONNX_SETUPDB[easyName] = profile
+    profile["prereqs"] = []
+    for k in profile.keys():
+        v = profile[k]
+        t = type(v)
+        if t == str:
+            if v.startswith("/"):
+                profile[k] = "/NERFSTUDIO/weights" + v
+                profile["prereqs"].append(profile[k])
+        if t == list:
+            newList = []
+            for i in v:
+                if i.startswith("/"):
+                    newList.append("/NERFSTUDIO/weights" + i)
+                    profile["prereqs"].append(newList[-1])
+                else:
+                    newList.append(i)
+    exit()
+    print(f"Registered ONNX feature model: {easyName}")
+
+
+registerOnnxModel(
+    "onnx",
+    {
+        "downloadProfile": "aliked",  # profile name to pass to zx_download_assets
+        "vocabTree": "/vocab_tree_faiss_flickr100K_words64K_aliked_n16rot.bin",  # filename of vocab tree
+        "extractionType": "ALIKED_N16ROT",
+        "extractorOptions": [
+            "--AlikedExtraction.n16rot_model_path",
+            "/aliked-n16rot.onnx",
+        ],
+        "matcherType": "ALIKED_LIGHTGLUE",
+        "matcherOptions": [
+            "--AlikedMatching.lightglue_model_path",
+            "/aliked-lightglue.onnx",
+        ],
+    },
+)
+
+registerOnnxModel(
+    "loma",
+    {
+        "downloadProfile": "loma",
+        "vocabTree": "/vocab_tree_loma_b_flickr100k.bin",
+        "extractionType": "LOMA_B",
+        "extractorOptions": [
+            "--LomaExtraction.detector_model_path",
+            "/loma_detector.onnx",
+            "--LomaExtraction.descriptor_model_path",
+            "/loma_descriptor_dedode_b.onnx",
+        ],
+        "matcherType": "LOMA_B",
+        "matcherOptions": ["--LomaMatching.b_model_path", "/loma_matcher_B.onnx"],
+    },
+)
+
 profilerStage("Runtime Setup")
 
 
@@ -72,7 +133,7 @@ def quietRun(args, check=False):
 
 if len(sys.argv) < 3:
     print(
-        "Usage: zx_process_pix4d <path/to/pix4d_raw_exported.zip> <path/to/dest> [global,noblur=18000,aliked,ar=4,solver=200]\n",
+        "Usage: zx_process_pix4d <path/to/pix4d_raw_exported.zip> <path/to/dest> [global,noblur=18000,onnx=aliked,ar=4,solver=200]\n",
         file=sys.stderr,
     )
     print(
@@ -90,14 +151,14 @@ if len(sys.argv) < 3:
         "Extraflags: \n"
         + "  global: Use GLOBAL_MAPPER mapping algorithm, which is much faster than POSE_MAPPER, but may be less accurate\n"
         + "  noblur=18000: Filter images by laplacian variance, to remove blurred images.\n"
-        + "  aliked: Use ALIKED_N16ROT for feature extraction and matching instead of SIFT, which does better on less-detailed surfaces. Requires 'zx_download_assets onnx' to run properly.\n"
-        + "  ar=4: Skip the mapping stage entirely, and instead use AR positions and refine those. Value is equal to the number of adjustment and retriangulation iterations. recommended to use in combination with raising the Ceres/Caspar solver iteration cap. Incompatible with ALIKED features, for some reason.\n"
+        + f"  onnx={"|".join(ONNX_SETUPDB.keys())}: Use an ONNX model for feature extraction and matching instead of SIFT, which does better on less-detailed surfaces and provides higher accuracy. Requires 'zx_download_assets <modelname>' to run.\n"
+        + "  ar=4: Skip the mapping stage entirely, and instead use AR positions and refine those. Value is equal to the number of adjustment and retriangulation iterations. recommended to use in combination with raising the Ceres/Caspar solver iteration cap. Incompatible with ONNX features, as it needs actual points.\n"
         + "  solver=200: Maximum number of solver iterations for the Ceres / Caspar GPU solvers\n"
         + "  caspar: Use Capsar solver instead of Ceres, for full GPU acceleration.\n"
         + "  vocab=50: Add a vocab tree matching stage, where the value is equal to the number of match candidates per image.\n"
         + "  spatial=6: Use this flag to modify the radius of the spatial matching stage.\n"
         + "  imfilter: (for AR pipeline) enable image filtering to remove bad cameras.\n"
-        + "  bettersift: (for non-ALIKED pipelines) enables SIFT Affine Shape Estimation and Domain Size Pooling, improving accuracy. This makes feature extraction use the CPU instead, making it slower.\n"
+        + "  bettersift: (for non-ONNX pipelines) enables SIFT Affine Shape Estimation and Domain Size Pooling, improving accuracy. This makes feature extraction use the CPU instead, making it slower.\n"
         + "  denoise=10: Uses OpenCV2 Non-Local Means denoising, with a default denoising strength of 10\n"
         + "  downscale=720: Downscales (area average) to the specified pixel height, after any denoising stages. Recommended to set to 540 or lower for GLUEMAP\n"
         + "  glue: Uses the highly experimental GLUEMAP backend for feedforward 3D processing. Expect crashes.",
@@ -132,9 +193,6 @@ if len(sys.argv) > 3:
     if "glue" in flags:
         EXPERIMENTAL_GLUE = True
         print("Switching pipeline from COLMAP to GLUEMAP")
-    if "aliked" in flags:
-        EXPERIMENTAL_ALIKED = True
-        print("Enabling ALIKED_N16ROT features")
     if "caspar" in flags:
         EXPERIMENTAL_SOLVER_BACKEND = "CASPAR"
         print("Switching to Caspar solver backend")
@@ -197,6 +255,15 @@ if len(sys.argv) > 3:
             print(
                 f"Enabling vocab-tree stage, with {STAGE_VOCABTREE_DEPTH} match candidates per image."
             )
+        if flag.startswith("onnx="):
+            model_id = flag.replace("onnx=", "").lower()
+            if not model_id in ONNX_SETUPDB:
+                print(
+                    f"ONNX model {model_id} does not exist! Possible values: {', '.join(ONNX_SETUPDB.keys())}"
+                )
+                sys.exit(1)
+            EXPERIMENTAL_ONNX_CFG = ONNX_SETUPDB[model_id]
+            print(f"Enabling ONNX model: {EXPERIMENTAL_ONNX_CFG['downloadProfile']}")
         if flag.startswith("solver="):
             SOLVER_ITERATION_CAP = int(flag.replace("solver=", ""))
             print(f"Setting solver iteration cap to {SOLVER_ITERATION_CAP}")
@@ -210,36 +277,34 @@ if HAS_CUSTOM_INTRINSICS and (EXPERIMENTAL_SOLVER_BACKEND == "CASPAR"):
     )
     sys.exit()
 
-if EXPERIMENTAL_AR and (EXPERIMENTAL_ALIKED or EXPERIMENTAL_BETTERSIFT):
+if EXPERIMENTAL_AR and ((EXPERIMENTAL_ONNX_CFG != None) or EXPERIMENTAL_BETTERSIFT):
     print(
-        "ALIKED/BETTER SIFT features cannot be used with point_triangulator, and as such don't work on the AR pipeline!"
+        "ONNX/BETTER SIFT features cannot be used with point_triangulator, and as such don't work on the AR pipeline!"
     )
     sys.exit(1)
 
-if EXPERIMENTAL_ALIKED:
-    if not Path("/NERFSTUDIO/weights/aliked-n16rot.onnx").is_file():
-        print(
-            "Error: Aliked N16ROT model weights not found. Run 'zx_download_assets onnx' to download them."
-        )
-        sys.exit(1)
-
-    if not Path("/NERFSTUDIO/weights/aliked-lightglue.onnx").is_file():
-        print(
-            "Error: Aliked LightGlue model weights not found. Run 'zx_download_assets onnx' to download them."
-        )
-        sys.exit(1)
+if EXPERIMENTAL_ONNX_CFG != None:
+    for prereq in EXPERIMENTAL_ONNX_CFG["prereqs"]:
+        if not Path(prereq).is_file():
+            print(
+                f"Error: {prereq} was not found!!!"
+            )
+            print(
+                f" - 'zx_download_assets {EXPERIMENTAL_ONNX_CFG["downloadProfile"]}' should resolve this."
+            )
+            sys.exit(1)
 
 VOCAB_TREE_PATH = (
-    "/NERFSTUDIO/weights/vocab_tree_faiss_flickr100K_words64K_aliked_n16rot.bin"
-    if EXPERIMENTAL_ALIKED
+    EXPERIMENTAL_ONNX_CFG["vocabTree"]
+    if EXPERIMENTAL_ONNX_CFG != None
     else "/NERFSTUDIO/weights/vocab_tree_faiss_flickr100K_words256K.bin"
 )
 
 if STAGE_VOCABTREE:
     if not Path(VOCAB_TREE_PATH).is_file():
-        if EXPERIMENTAL_ALIKED:
+        if EXPERIMENTAL_ONNX_CFG != None:
             print(
-                "Error: Aliked vocab-trees not found. Run 'zx_download_assets onnx' to download them."
+                f"Error: {EXPERIMENTAL_ONNX_CFG["extractionType"]} vocab-trees not found. Run 'zx_download_assets {EXPERIMENTAL_ONNX_CFG["downloadProfile"]}' to download them."
             )
         else:
             print(
@@ -504,7 +569,7 @@ R_a = 6378137.0
 with open(priors_file, "w") as pf:
     for img_name, data in AR_positionData.items():
         if not Path(images_dir + data["img"]).is_file():
-            #print(images_dir + data["img"])
+            # print(images_dir + data["img"])
             continue
         dlat = math.radians(data["latitude"] - ref_lat)
         dlon = math.radians(data["longitude"] - ref_lon)
@@ -599,19 +664,17 @@ if EXPERIMENTAL_GLUE:  # 3D feedforward
 else:  # standard COLMAP
     extraExtractionFlags = []
     extraMatchingFlags = ["--FeatureMatching.guided_matching", "1"]
-    if EXPERIMENTAL_ALIKED:
+    if EXPERIMENTAL_ONNX_CFG != None:
         extraExtractionFlags += [
             "--FeatureExtraction.type",
-            "ALIKED_N16ROT",
-            "--AlikedExtraction.n16rot_model_path",
-            "/NERFSTUDIO/weights/aliked-n16rot.onnx",
-        ]
+            EXPERIMENTAL_ONNX_CFG["extractionType"],
+        ] + EXPERIMENTAL_ONNX_CFG["extractionOptions"]
+
         extraMatchingFlags = [
             "--FeatureMatching.type",
-            "ALIKED_LIGHTGLUE",
-            "--AlikedMatching.lightglue_model_path",
-            "/NERFSTUDIO/weights/aliked-lightglue.onnx",
-        ]
+            EXPERIMENTAL_ONNX_CFG["matcherType"],
+        ] + EXPERIMENTAL_ONNX_CFG["matcherOptions"]
+        
     elif EXPERIMENTAL_BETTERSIFT:
         extraExtractionFlags += [
             "--SiftExtraction.estimate_affine_shape",
