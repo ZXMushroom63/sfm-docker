@@ -89,7 +89,7 @@ def registerOnnxModel(easyName: str, profile: dict):
 
 
 registerOnnxModel(
-    "onnx",
+    "aliked_n16rot",
     {
         "downloadProfile": "aliked",  # profile name to pass to zx_download_assets
         "vocabTree": "/vocab_tree_faiss_flickr100K_words64K_aliked_n16rot.bin",  # filename of vocab tree
@@ -107,10 +107,10 @@ registerOnnxModel(
 )
 
 registerOnnxModel(
-    "loma_base",
+    "loma_base128",
     {
-        "downloadProfile": "loma_base",
-        "vocabTree": "/vocab_tree_loma_b_flickr100k.bin",
+        "downloadProfile": "loma_base128",
+        "vocabTree": "/vocab_tree_loma_b128_flickr100k.bin",
         "extractionType": "LOMA_B",
         "extractionOptions": [
             "--LomaExtraction.detector_model_path",
@@ -119,24 +119,60 @@ registerOnnxModel(
             "/loma_descriptor_dedode_b.onnx",
         ],
         "matcherType": "LOMA_B",
-        "matcherOptions": ["--LomaMatching.b_model_path", "/loma_matcher_B.onnx"],
+        "matcherOptions": ["--LomaMatching.b_model_path", "/loma_matcher_B128.onnx"],
     },
 )
 
 registerOnnxModel(
-    "loma_large",
+    "loma_base128_bf16",
     {
-        "downloadProfile": "loma_large",
-        "vocabTree": "/vocab_tree_loma_b_flickr100k.bin",
+        "downloadProfile": "loma_base128_bf16",
+        "vocabTree": "/vocab_tree_loma_b128_flickr100k.bin",
         "extractionType": "LOMA_B",
-        "extractorOptions": [
+        "extractionOptions": [
             "--LomaExtraction.detector_model_path",
             "/loma_detector.onnx",
             "--LomaExtraction.descriptor_model_path",
             "/loma_descriptor_dedode_b.onnx",
+            "--LomaExtraction.use_bf16", "1"
+        ],
+        "matcherType": "LOMA_B",
+        "matcherOptions": ["--LomaMatching.b_model_path", "/loma_matcher_B128_bf16.onnx", "--LomaMatching.use_bf16", "1"],
+    },
+)
+
+registerOnnxModel(
+    "loma_large256",
+    {
+        "downloadProfile": "loma_large256",
+        "vocabTree": "/vocab_tree_loma_b_flickr100k.bin",
+        "extractionType": "LOMA_B",
+        "extractionOptions": [
+            "--LomaExtraction.detector_model_path",
+            "/loma_detector.onnx",
+            "--LomaExtraction.descriptor_model_path",
+            "/loma_descriptor_dedode_g.onnx",
         ],
         "matcherType": "LOMA_L",
         "matcherOptions": ["--LomaMatching.l_model_path", "/loma_matcher_L.onnx"],
+    },
+)
+
+registerOnnxModel(
+    "loma_large256_bf16",
+    {
+        "downloadProfile": "loma_large256_bf16",
+        "vocabTree": "/vocab_tree_loma_b_flickr100k.bin",
+        "extractionType": "LOMA_B",
+        "extractionOptions": [
+            "--LomaExtraction.detector_model_path",
+            "/loma_detector.onnx",
+            "--LomaExtraction.descriptor_model_path",
+            "/loma_descriptor_dedode_g_bf16.onnx",
+            "--LomaExtraction.use_bf16", "1"
+        ],
+        "matcherType": "LOMA_L",
+        "matcherOptions": ["--LomaMatching.l_model_path", "/loma_matcher_L_bf16.onnx", "--LomaMatching.use_bf16", "1"],
     },
 )
 

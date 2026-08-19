@@ -2,47 +2,86 @@
 mkdir -p /NERFSTUDIO/weights
 cd /NERFSTUDIO/weights
 
-echo "Usage: $0 <small|medium|large|aliked|loma_base|loma_large|sift_matchers>"
+echo "Usage: $0 <all|all_loma|small|medium|large|aliked|loma_base128|loma_base128_bf16|loma_large256|loma_large256_bf16|sift_matchers>"
+if [ -z "$1" ]; then
+    exit
+fi
 SZ=${1:-"small"}
 
-if [ "$SZ" = "aliked" ]; then
+DOALL=0
+DOALL_LOMA=0
+if [ "$SZ" = "all" ]; then
+    DOALL=1
+    DOALL_LOMA=1
+fi
+if [ "$SZ" = "all_loma" ]; then
+    DOALL_LOMA=1
+fi
+
+find . -type f -empty -delete
+
+DL="curl -C - -fL -O"
+
+if [ "$SZ" = "aliked" ] || [ $DOALL = 1 ]; then
     echo "Downloading ALIKED ONNX models and vocabtrees..."
     sleep 1
-    curl -O https://github.com/colmap/colmap/releases/download/3.13.0/aliked-n32.onnx
-    curl -O https://github.com/colmap/colmap/releases/download/3.13.0/aliked-n16rot.onnx
-    curl -O https://github.com/colmap/colmap/releases/download/3.13.0/aliked-lightglue.onnx
-    curl -O https://github.com/colmap/colmap/releases/download/3.13.0/vocab_tree_faiss_flickr100K_words64K_aliked_n16rot.bin
-    curl -O https://github.com/colmap/colmap/releases/download/3.13.0/vocab_tree_faiss_flickr100K_words64K_aliked_n32.bin
-elif [ "$SZ" = "sift_matchers" ]; then
+    $DL https://github.com/colmap/colmap/releases/download/3.13.0/aliked-n32.onnx
+    $DL https://github.com/colmap/colmap/releases/download/3.13.0/aliked-n16rot.onnx
+    $DL https://github.com/colmap/colmap/releases/download/3.13.0/aliked-lightglue.onnx
+    $DL https://github.com/colmap/colmap/releases/download/3.13.0/vocab_tree_faiss_flickr100K_words64K_aliked_n16rot.bin
+    $DL https://github.com/colmap/colmap/releases/download/3.13.0/vocab_tree_faiss_flickr100K_words64K_aliked_n32.bin
+fi
+if [ "$SZ" = "sift_matchers" ] || [ $DOALL = 1 ]; then
     echo "Downloading SIFT ONNX matcher models..."
     sleep 1
-    curl -O https://github.com/colmap/colmap/releases/download/3.13.0/sift-lightglue.onnx
-    curl -O https://github.com/colmap/colmap/releases/download/3.13.0/bruteforce-matcher.onnx
-elif [ "$SZ" = "loma_base" ]; then
-    echo "Downloading LoMa-B ONNX models and vocabtrees..."
+    $DL https://github.com/colmap/colmap/releases/download/3.13.0/sift-lightglue.onnx
+    $DL https://github.com/colmap/colmap/releases/download/3.13.0/bruteforce-matcher.onnx
+fi
+if [ "$SZ" = "loma_base128" ] || [ $DOALL_LOMA = 1 ]; then
+    echo "Downloading LoMa-B128 ONNX models and vocabtrees..."
     sleep 1
-    curl -O https://github.com/davnords/storage/releases/download/loma/loma_detector.onnx
-    curl -O https://github.com/davnords/storage/releases/download/loma/loma_descriptor_dedode_b.onnx
-    curl -O https://github.com/davnords/storage/releases/download/loma/loma_matcher_B.onnx
-    curl -O https://github.com/davnords/storage/releases/download/loma/vocab_tree_loma_b_flickr100k.bin
-elif [ "$SZ" = "loma_large" ]; then
-    echo "Downloading LoMa-L ONNX models and vocabtrees..."
+    $DL https://github.com/davnords/storage/releases/download/loma/loma_detector.onnx
+    $DL https://github.com/davnords/storage/releases/download/loma/loma_descriptor_dedode_b.onnx
+    $DL https://github.com/davnords/storage/releases/download/loma/loma_matcher_B128.onnx
+    $DL https://github.com/davnords/storage/releases/download/loma/vocab_tree_loma_b128_flickr100k.bin
+fi
+if [ "$SZ" = "loma_large256" ] || [ $DOALL_LOMA = 1 ]; then
+    echo "Downloading LoMa-L256 ONNX models and vocabtrees..."
     sleep 1
-    curl -O https://github.com/davnords/storage/releases/download/loma/loma_detector.onnx
-    curl -O https://github.com/davnords/storage/releases/download/loma/loma_descriptor_dedode_b.onnx
-    curl -O https://github.com/davnords/storage/releases/download/loma/loma_matcher_L.onnx
-    curl -O https://github.com/davnords/storage/releases/download/loma/vocab_tree_loma_b_flickr100k.bin
-elif [ "$SZ" = "large" ]; then
+    $DL https://github.com/davnords/storage/releases/download/loma/loma_detector.onnx
+    $DL https://github.com/davnords/storage/releases/download/loma/loma_descriptor_dedode_g.onnx
+    $DL https://github.com/davnords/storage/releases/download/loma/loma_matcher_L.onnx
+    $DL https://github.com/davnords/storage/releases/download/loma/vocab_tree_loma_b_flickr100k.bin
+fi
+if [ "$SZ" = "loma_base128_bf16" ] || [ $DOALL_LOMA = 1  ]; then
+    echo "Downloading LoMa-B128-bf16 ONNX models and vocabtrees..."
+    sleep 1
+    $DL https://github.com/davnords/storage/releases/download/loma/loma_detector.onnx
+    $DL https://github.com/davnords/storage/releases/download/loma/loma_descriptor_dedode_b.onnx
+    $DL https://github.com/davnords/storage/releases/download/loma/loma_matcher_B128_bf16.onnx
+    $DL https://github.com/davnords/storage/releases/download/loma/vocab_tree_loma_b128_flickr100k.bin
+fi
+if [ "$SZ" = "loma_large256_bf16" ] || [ $DOALL_LOMA = 1  ]; then
+    echo "Downloading LoMa-L128-bf16 ONNX models and vocabtrees..."
+    sleep 1
+    $DL https://github.com/davnords/storage/releases/download/loma/loma_detector.onnx
+    $DL https://github.com/davnords/storage/releases/download/loma/loma_descriptor_dedode_g_bf16.onnx
+    $DL https://github.com/davnords/storage/releases/download/loma/loma_matcher_L_bf16.onnx
+    $DL https://github.com/davnords/storage/releases/download/loma/vocab_tree_loma_b_flickr100k.bin
+fi
+if [ "$SZ" = "large"  ] || [ $DOALL = 1 ]; then
     echo "Warning: the large vocab tree is 275MB! Proceeding in 3 seconds..."
     sleep 3
-    curl -O https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_faiss_flickr100K_words32K.bin
-    curl -O https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_faiss_flickr100K_words256K.bin
-    curl -O https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_faiss_flickr100K_words1M.bin
-elif [ "$SZ" = "medium" ]; then
+    $DL https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_faiss_flickr100K_words32K.bin
+    $DL https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_faiss_flickr100K_words256K.bin
+    $DL https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_faiss_flickr100K_words1M.bin
+fi
+if [ "$SZ" = "medium" ] || [ $DOALL = 1 ]; then
     echo "Downloading small + medium vocab trees!"
-    curl -O https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_faiss_flickr100K_words32K.bin
-    curl -O https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_faiss_flickr100K_words256K.bin
-else
+    $DL https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_faiss_flickr100K_words32K.bin
+    $DL https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_faiss_flickr100K_words256K.bin
+fi
+if [ "$SZ" = "small"  ] || [ $DOALL = 1 ]; then
     echo "Downloading small vocab tree..."
-    curl -O https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_faiss_flickr100K_words32K.bin
+    $DL https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_faiss_flickr100K_words32K.bin
 fi
