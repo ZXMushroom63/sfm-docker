@@ -40,8 +40,6 @@ from scipy.spatial.transform import Rotation as R
 from tqdm import tqdm
 import cv2
 
-EXPERIMENTAL_GLOMAP = False
-
 EXPERIMENTAL_ONNX_CFG = None
 ONNX_SETUPDB = {}
 
@@ -54,7 +52,7 @@ STAGE_SPATIAL_RADIUS = 6
 STAGE_DOWNSCALE = -1
 AR_MAX_REPROJECTION_ERROR = 12.0
 EXPERIMENTAL_SOLVER_BACKEND = "CERES"
-EXPERIMENTAL_AR = False
+MATCHER_METHOD = "POSE_PRIOR"
 EXPERIMENTAL_AR_ITERS = 4
 EXPERIMENTAL_DENOISE = False
 EXPERIMENTAL_DENOISE_STRENGTH = 10
@@ -85,7 +83,7 @@ def registerOnnxModel(easyName: str, profile: dict):
                     newList.append(i)
             profile[k] = newList
     profile["prereqs"] = prereqs
-    print(f"Registered ONNX feature model: {easyName}")
+    #print(f"Registered ONNX feature model: {easyName}")
 
 
 registerOnnxModel(
@@ -111,14 +109,14 @@ registerOnnxModel(
     {
         "downloadProfile": "loma_base128",
         "vocabTree": "/vocab_tree_loma_b128_flickr100k.bin",
-        "extractionType": "LOMA_B",
+        "extractionType": "LOMA_B128",
         "extractionOptions": [
             "--LomaExtraction.detector_model_path",
             "/loma_detector.onnx",
-            "--LomaExtraction.descriptor_model_path",
+            "--LomaExtraction.descriptor_b128_model_path",
             "/loma_descriptor_dedode_b.onnx",
         ],
-        "matcherType": "LOMA_B",
+        "matcherType": "LOMA_B128",
         "matcherOptions": ["--LomaMatching.b_model_path", "/loma_matcher_B128.onnx"],
     },
 )
@@ -128,15 +126,15 @@ registerOnnxModel(
     {
         "downloadProfile": "loma_base128_bf16",
         "vocabTree": "/vocab_tree_loma_b128_flickr100k.bin",
-        "extractionType": "LOMA_B",
+        "extractionType": "LOMA_B128",
         "extractionOptions": [
             "--LomaExtraction.detector_model_path",
             "/loma_detector.onnx",
-            "--LomaExtraction.descriptor_model_path",
+            "--LomaExtraction.descriptor_b128_model_path",
             "/loma_descriptor_dedode_b.onnx",
             "--LomaExtraction.use_bf16", "1"
         ],
-        "matcherType": "LOMA_B",
+        "matcherType": "LOMA_B128",
         "matcherOptions": ["--LomaMatching.b_model_path", "/loma_matcher_B128_bf16.onnx", "--LomaMatching.use_bf16", "1"],
     },
 )
@@ -204,6 +202,7 @@ if len(sys.argv) < 3:
     print(
         "Extraflags: \n"
         + "  global: Use GLOBAL_MAPPER mapping algorithm, which is much faster than POSE_MAPPER, but may be less accurate\n"
+        + "  incremental: Use incremental mapping algorithm, which is very similar to the default POSE_MAPPER, and also has high accuracy.\n"
         + "  noblur=18000: Filter images by laplacian variance, to remove blurred images.\n"
         + f"  onnx={"|".join(ONNX_SETUPDB.keys())}: Use an ONNX model for feature extraction and matching instead of SIFT, which does better on less-detailed surfaces and provides higher accuracy. Requires 'zx_download_assets <modelname>' to run.\n"
         + "  ar=4: Skip the mapping stage entirely, and instead use AR positions and refine those. Value is equal to the number of adjustment and retriangulation iterations. recommended to use in combination with raising the Ceres/Caspar solver iteration cap. Incompatible with ONNX features, as it needs actual points.\n"
@@ -242,8 +241,11 @@ print(f"Will finalise to: {true_dest_path}")
 if len(sys.argv) > 3:
     flags = sys.argv[3].lower().strip().split(",")
     if "global" in flags:
-        EXPERIMENTAL_GLOMAP = True
-        print("Enabling GLOBAL_MAPPER mapper")
+        MATCHER_METHOD = "GLOMAP"
+        print("Switching to GLOBAL_MAPPER mapper")
+    if "incremental" in flags:
+        MATCHER_METHOD = "INCREMENTAL"
+        print("Switching to INCREMENTAL_MAPPER mapper")
     if "glue" in flags:
         EXPERIMENTAL_GLUE = True
         print("Switching pipeline from COLMAP to GLUEMAP")
@@ -269,10 +271,10 @@ if len(sys.argv) > 3:
                     f"Enabling blur detection with default threshold of lv={EXPERIMENTAL_NOBLUR_THRESH}"
                 )
         if flag.startswith("ar"):
-            EXPERIMENTAL_AR = True
+            MATCHER_METHOD = "AR"
             if flag.startswith("ar="):
                 EXPERIMENTAL_AR_ITERS = int(flag.replace("ar=", ""))
-            print(f"Using AR priors, with {EXPERIMENTAL_AR_ITERS} iterations")
+            print(f"Switching to custom AR mapper. Using AR priors, with {EXPERIMENTAL_AR_ITERS} iterations")
             print(
                 f"Note: if your position data is noisy, try switching from the experimental AR pipeline to GLOBAL"
             )
@@ -331,7 +333,7 @@ if HAS_CUSTOM_INTRINSICS and (EXPERIMENTAL_SOLVER_BACKEND == "CASPAR"):
     )
     sys.exit()
 
-if EXPERIMENTAL_AR and ((EXPERIMENTAL_ONNX_CFG != None) or EXPERIMENTAL_BETTERSIFT):
+if MATCHER_METHOD == "AR" and ((EXPERIMENTAL_ONNX_CFG != None) or EXPERIMENTAL_BETTERSIFT):
     print(
         "ONNX/BETTER SIFT features cannot be used with point_triangulator, and as such don't work on the AR pipeline!"
     )
@@ -617,6 +619,19 @@ ref_lat = AR_positionData[first_img]["latitude"]
 ref_lon = AR_positionData[first_img]["longitude"]
 ref_alt = AR_positionData[first_img]["altitude"]
 
+BASE_MAPPER_REFINE_OPTS = (
+    [
+        "--Mapper.ba_refine_focal_length",
+        "0",
+        "--Mapper.ba_refine_principal_point",
+        "0",
+        "--Mapper.ba_refine_extra_params",
+        "0",
+    ]
+    if HAS_CUSTOM_INTRINSICS
+    else []
+)
+
 R_a = 6378137.0
 with open(priors_file, "w") as pf:
     for img_name, data in AR_positionData.items():
@@ -633,7 +648,7 @@ with open(priors_file, "w") as pf:
         yaw = data["yaw"]
         pf.write(f"{img_name} {x} {y} {z}\n")
 
-if EXPERIMENTAL_AR:
+if MATCHER_METHOD == "AR":
     with open(pfile("colmap/sparse/0/images.txt"), "w") as img:
         frame_index = 1
         for img_name, data in AR_positionData.items():
@@ -823,7 +838,7 @@ else:  # standard COLMAP
         )
         profilerStage("VocabTree Matching")
 
-    if EXPERIMENTAL_AR:
+    if MATCHER_METHOD == "AR":
         print("Step 3a: Generating initial sparse model from AR priors...")
         with open(pfile("colmap/sparse/0/points3D.txt"), "w") as pf:
             pf.write("")
@@ -1001,7 +1016,7 @@ else:  # standard COLMAP
                     ]
                 )
             profilerStage(f"AR Iteration {loop+1}")
-    elif EXPERIMENTAL_GLOMAP:
+    elif MATCHER_METHOD == "GLOMAP":
         print("Step 3a: Calibrating view graph...")
         subprocess.run(["colmap", "view_graph_calibrator", "--database_path", db_path])
         profilerStage("View Graph Calibration")
@@ -1044,20 +1059,32 @@ else:  # standard COLMAP
             ]
         )
         profilerStage("Global Mapper")
-    else:
-        print("Step 3: Pose prior mapper...")
-        POSE_MAPPER_REFINE_OPTS = (
+    elif MATCHER_METHOD == "INCREMENTAL":
+        print("Step 3: Incremental mapper...")
+        subprocess.run(
             [
-                "--Mapper.ba_refine_focal_length",
-                "0",
-                "--Mapper.ba_refine_principal_point",
-                "0",
-                "--Mapper.ba_refine_extra_params",
-                "0",
-            ]
-            if HAS_CUSTOM_INTRINSICS
-            else []
+                "colmap",
+                "mapper",
+                "--database_path",
+                db_path,
+                "--image_path",
+                images_dir,
+                "--output_path",
+                pfile("colmap/sparse"),
+                "--Mapper.num_threads",
+                "-1",
+                "--Mapper.ba_global_backend",
+                "CERES",
+                "--Mapper.ba_local_backend",
+                "CERES",
+                "--Mapper.ba_use_gpu",
+                "1",
+            ] + BASE_MAPPER_REFINE_OPTS
         )
+        profilerStage("Incremental Mapper")
+    elif MATCHER_METHOD == "POSE_PRIOR":
+        print("Step 3: Pose prior mapper...")
+        
         subprocess.run(
             [
                 "colmap",
@@ -1070,12 +1097,6 @@ else:  # standard COLMAP
                 pfile("colmap/sparse"),
                 "--Mapper.num_threads",
                 "-1",
-                "--Mapper.filter_max_reproj_error",
-                "1.5",
-                "--Mapper.min_num_matches",
-                "35",
-                "--Mapper.max_reg_trials",
-                "1",
                 "--Mapper.ba_global_backend",
                 "CERES",
                 "--Mapper.ba_local_backend",
@@ -1083,7 +1104,7 @@ else:  # standard COLMAP
                 "--Mapper.ba_use_gpu",
                 "1",
             ]
-            + POSE_MAPPER_REFINE_OPTS
+            + BASE_MAPPER_REFINE_OPTS
         )
         profilerStage("Pose Prior Mapper")
 
@@ -1104,7 +1125,7 @@ else:  # standard COLMAP
             "0",
             "--alignment_type",
             "custom",
-            # "--robust_alignment", "1",
+            #"--use_robust_loss_on_prior_position", "1",
             "--alignment_max_error",
             "1.5",
         ]
